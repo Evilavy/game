@@ -304,7 +304,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
     const [scores, setScores] = useState<Score[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [latestScorePseudo, setLatestScorePseudo] = useState<string | null>(null);
+    const [lastUpdatedPseudo, setLastUpdatedPseudo] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchScores = async () => {
@@ -317,14 +317,22 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                 if (Array.isArray(data)) {
                     setScores(data);
 
-                    // Trouver le score le plus récent
+                    // Identifier le dernier score mis à jour (s'il est récent)
                     if (data.length > 0) {
                         const mostRecent = data.reduce((latest, current) => {
                             if (!latest.end_time) return current;
                             if (!current.end_time) return latest;
                             return new Date(current.end_time) > new Date(latest.end_time) ? current : latest;
                         });
-                        setLatestScorePseudo(mostRecent.pseudo);
+                        
+                        // On considère une mise à jour comme "récente" si elle date de moins de 5 minutes
+                        if(mostRecent.end_time) {
+                            const timeSinceUpdate = Date.now() - new Date(mostRecent.end_time).getTime();
+                            const fiveMinutes = 5 * 60 * 1000;
+                            if (timeSinceUpdate < fiveMinutes) {
+                                setLastUpdatedPseudo(mostRecent.pseudo);
+                            }
+                        }
                     }
 
                 } else {
@@ -393,7 +401,8 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                         marginBottom: '3rem',
                     }}>
                         {top3.map((s, i) => {
-                            const isLatest = s.pseudo === latestScorePseudo;
+                            const isLastUpdated = s.pseudo === lastUpdatedPseudo;
+                            const message = i === 0 ? "Record Battu !" : "Nouveau !";
                             return (
                                 <div key={i} style={podiumItemStyle(i)}>
                                     <p style={{fontSize: '2.5rem', margin: 0, fontWeight: '900'}}>{i === 0 ? '👑' : i === 1 ? '🥈' : '🥉'}</p>
@@ -401,7 +410,9 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                                     <p style={{fontSize: '1.3rem', margin: '5px 0 0', fontWeight: '500', color: '#E2E8F0', fontFamily: 'monospace'}}>
                                         <AnimatedNumber value={s.score} />
                                     </p>
-                                    {isLatest && <div style={{height: '20px'}}><p style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>Record Battu !</p></div>}
+                                    <div style={{height: '20px', marginTop: '5px'}}>
+                                        {isLastUpdated && <p style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>{message}</p>}
+                                    </div>
                                 </div>
                             );
                         })}
@@ -416,7 +427,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                     {!loading && !error && (
                         <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {restOfScores.map((s, i) => {
-                                const isLatest = s.pseudo === latestScorePseudo;
+                                const isLastUpdated = s.pseudo === lastUpdatedPseudo;
                                 return (
                                     <li key={i+3} style={{
                                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -427,7 +438,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                                             <span style={{fontWeight: '600', fontSize: '1.1rem'}}>
                                                 #{i + 4} {s.pseudo}
                                             </span>
-                                            {isLatest && <span style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>Nouveau</span>}
+                                            {isLastUpdated && <span style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>Nouveau !</span>}
                                         </div>
                                         <span style={{fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '700'}}>{s.score.toLocaleString()}</span>
                                     </li>
