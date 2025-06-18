@@ -5,7 +5,7 @@ import Game, { ScoreData } from '@/components/Game';
 import Image from 'next/image';
 
 type GameState = 'home' | 'playing' | 'gameover' | 'leaderboard';
-type Score = { pseudo: string, score: number };
+type Score = { pseudo: string, score: number, end_time?: string };
 
 const containerStyles: React.CSSProperties = {
   display: 'flex',
@@ -304,6 +304,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
     const [scores, setScores] = useState<Score[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [latestScorePseudo, setLatestScorePseudo] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchScores = async () => {
@@ -311,9 +312,24 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
             try {
                 const res = await fetch('/api/scores');
                 if (!res.ok) throw new Error('Le serveur est peut-être en pause café.');
-                const data = await res.json();
-                if (Array.isArray(data)) setScores(data);
-                else throw new Error('Format de données inattendu.');
+                const data: Score[] = await res.json();
+                
+                if (Array.isArray(data)) {
+                    setScores(data);
+
+                    // Trouver le score le plus récent
+                    if (data.length > 0) {
+                        const mostRecent = data.reduce((latest, current) => {
+                            if (!latest.end_time) return current;
+                            if (!current.end_time) return latest;
+                            return new Date(current.end_time) > new Date(latest.end_time) ? current : latest;
+                        });
+                        setLatestScorePseudo(mostRecent.pseudo);
+                    }
+
+                } else {
+                    throw new Error('Format de données inattendu.');
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Une erreur inconnue est survenue.');
             } finally {
@@ -355,6 +371,11 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
             <style>{`
                 .leaderboard-list::-webkit-scrollbar { display: none; }
                 .leaderboard-list { -ms-overflow-style: none; scrollbar-width: none; }
+                @keyframes pulse {
+                    0% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.7; transform: scale(1.05); }
+                    100% { opacity: 1; transform: scale(1); }
+                }
             `}</style>
             <div style={{...containerStyles, fontFamily: "'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem 1rem', boxSizing: 'border-box' }}>
                 <Image src="/Bureau-Infernale.png" alt="Background" fill style={{ objectFit: 'cover', filter: 'blur(10px) brightness(0.6)', transform: 'scale(1.1)', zIndex: -2 }} />
@@ -371,15 +392,19 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                         display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
                         marginBottom: '3rem',
                     }}>
-                        {top3.map((s, i) => (
-                            <div key={i} style={podiumItemStyle(i)}>
-                                <p style={{fontSize: '2.5rem', margin: 0, fontWeight: '900'}}>{i === 0 ? '👑' : i === 1 ? '🥈' : '🥉'}</p>
-                                <p style={{fontSize: '1.4rem', margin: '10px 0', fontWeight: '700', textShadow: '1px 1px 4px #000'}}>{s.pseudo}</p>
-                                <p style={{fontSize: '1.3rem', margin: '5px 0 0', fontWeight: '500', color: '#E2E8F0', fontFamily: 'monospace'}}>
-                                    <AnimatedNumber value={s.score} />
-                                </p>
-                            </div>
-                        ))}
+                        {top3.map((s, i) => {
+                            const isLatest = s.pseudo === latestScorePseudo;
+                            return (
+                                <div key={i} style={podiumItemStyle(i)}>
+                                    <p style={{fontSize: '2.5rem', margin: 0, fontWeight: '900'}}>{i === 0 ? '👑' : i === 1 ? '🥈' : '🥉'}</p>
+                                    <p style={{fontSize: '1.4rem', margin: '10px 0', fontWeight: '700', textShadow: '1px 1px 4px #000'}}>{s.pseudo}</p>
+                                    <p style={{fontSize: '1.3rem', margin: '5px 0 0', fontWeight: '500', color: '#E2E8F0', fontFamily: 'monospace'}}>
+                                        <AnimatedNumber value={s.score} />
+                                    </p>
+                                    {isLatest && <div style={{height: '20px'}}><p style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>Record Battu !</p></div>}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
                 
@@ -390,18 +415,24 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                     
                     {!loading && !error && (
                         <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {restOfScores.map((s, i) => (
-                                <li key={i+3} style={{
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                    padding: '12px 20px', borderRadius: '10px', backgroundColor: 'rgba(20, 30, 45, 0.5)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                }}>
-                                    <span style={{fontWeight: '600', fontSize: '1.1rem'}}>
-                                        #{i + 4} {s.pseudo}
-                                    </span>
-                                    <span style={{fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '700'}}>{s.score.toLocaleString()}</span>
-                                </li>
-                            ))}
+                            {restOfScores.map((s, i) => {
+                                const isLatest = s.pseudo === latestScorePseudo;
+                                return (
+                                    <li key={i+3} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        padding: '12px 20px', borderRadius: '10px', backgroundColor: 'rgba(20, 30, 45, 0.5)',
+                                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    }}>
+                                        <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                                            <span style={{fontWeight: '600', fontSize: '1.1rem'}}>
+                                                #{i + 4} {s.pseudo}
+                                            </span>
+                                            {isLatest && <span style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>Nouveau</span>}
+                                        </div>
+                                        <span style={{fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '700'}}>{s.score.toLocaleString()}</span>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     )}
                 </div>

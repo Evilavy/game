@@ -18,7 +18,7 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from('scores')
-      .select('pseudo, score')
+      .select('pseudo, score, end_time')
       .order('score', { ascending: false })
 
     if (error) throw error;

@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { createNoise2D } from 'simplex-noise';
 
 // --- CONSTANTES DE SÉCURITÉ ---
-const MIN_GAME_DURATION = 0; // 10 secondes minimum
+const MIN_GAME_DURATION = 0; // 0 secondes minimum
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
 const MAX_SCORE_PER_MINUTE = 2000; // Score maximum possible par minute
 
@@ -167,6 +167,9 @@ interface Bubble {
     life: number;
 }
 
+// Type pour les scores du classement
+type Score = { pseudo: string, score: number };
+
 export interface ScoreData {
     score: number;
     sessionToken: string;
@@ -328,6 +331,29 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const [isLevelingUp, setIsLevelingUp] = useState(false);
     const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
     const [isGameOver, setIsGameOver] = useState(false);
+
+    // --- State pour le classement en direct ---
+    const [leaderboard, setLeaderboard] = useState<Score[]>([]);
+    const playerRankRef = useRef<number | null>(null);
+    const [rankUpAnimation, setRankUpAnimation] = useState({ show: false, rank: 0, text: '' });
+
+    // Récupérer le classement au démarrage
+    useEffect(() => {
+        const fetchLeaderboard = async () => {
+            try {
+                const res = await fetch('/api/scores');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        setLeaderboard(data);
+                    }
+                }
+            } catch (error) {
+                console.error("Erreur lors du chargement du classement:", error);
+            }
+        };
+        fetchLeaderboard();
+    }, []);
 
     const noise2D = useMemo(() => createNoise2D(), []);
     const map: Tile[][] = useMemo(() => {
@@ -1113,6 +1139,30 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     }
                     // Si plus de perks, le jeu continue sans pause.
                 }
+
+                // --- Logique du classement en direct ---
+                const currentTotalXp = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
+                if (leaderboard.length > 0) {
+                    let rank = leaderboard.length + 1;
+                    for (let i = 0; i < leaderboard.length; i++) {
+                        if (currentTotalXp > leaderboard[i].score) {
+                            rank = i + 1;
+                            break;
+                        }
+                    }
+
+                    if (playerRankRef.current === null) {
+                        playerRankRef.current = rank;
+                    } else if (rank < playerRankRef.current) {
+                        // Le joueur est monté dans le classement !
+                        const rankUpMessages = ["Bien joué !", "Superbe !", "Continuez !", "Excellent !", "Incroyable !"];
+                        const message = rankUpMessages[Math.floor(Math.random() * rankUpMessages.length)];
+                        setRankUpAnimation({ show: true, rank, text: message });
+                        setTimeout(() => setRankUpAnimation({ show: false, rank: 0, text: '' }), 3000); // Animation de 3s
+                    }
+                    playerRankRef.current = rank;
+                }
+                // --- Fin de la logique du classement ---
             }
 
             // Coffee Bubbles Logic
@@ -1474,6 +1524,58 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     context.stroke();
                 }
             }
+
+            // --- Interface du classement en direct ---
+            context.textAlign = 'right';
+
+            // Afficher le rang actuel
+            if (playerRankRef.current !== null) {
+                context.fillStyle = 'white';
+                context.font = 'bold 22px Arial';
+                context.shadowColor = 'black';
+                context.shadowBlur = 5;
+                context.fillText(`Rang: #${playerRankRef.current}`, canvas.width - 20, 40);
+            }
+
+            // Afficher la progression vers le #1
+            if (leaderboard.length > 0) {
+                const topScore = leaderboard[0].score;
+                const currentTotalXp = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
+                const progressPercentage = Math.min((currentTotalXp / topScore) * 100, 100);
+
+                const barWidth = 200;
+                const barX = canvas.width - barWidth - 20;
+                const barY = 60;
+                
+                context.font = '14px Arial';
+                context.fillStyle = 'white';
+                context.fillText('Progression vers le #1', canvas.width - 20, barY - 5);
+                
+                // Barre de progression
+                context.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                context.fillRect(barX, barY, barWidth, 20);
+                
+                const gradient = context.createLinearGradient(barX, 0, barX + barWidth, 0);
+                gradient.addColorStop(0, '#39FF14');
+                gradient.addColorStop(1, '#00c700');
+                context.fillStyle = gradient;
+                context.fillRect(barX, barY, barWidth * (progressPercentage / 100), 20);
+                
+                // Texte du pourcentage
+                context.fillStyle = 'white';
+                context.font = 'bold 12px Arial';
+                context.textBaseline = 'middle';
+                context.textAlign = 'center';
+                context.shadowColor = 'black';
+                context.shadowBlur = 4;
+                context.fillText(`${Math.floor(progressPercentage)}%`, barX + barWidth / 2, barY + 11);
+                
+                // Réinitialiser le contexte
+                context.shadowBlur = 0;
+                context.textAlign = 'left';
+                context.textBaseline = 'alphabetic';
+            }
+            // --- Fin de l'interface du classement ---
         };
         
         const gameLoop = () => {
@@ -1494,7 +1596,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             window.removeEventListener('keyup', handleKeyUp);
             cancelAnimationFrame(animationFrameId);
         };
-    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel]);
+    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel, leaderboard, handleGameOver]);
 
     useEffect(() => {
         if (playerStateRef.current.health <= 0) {
@@ -1506,7 +1608,29 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     }, [handleGameOver, totalXpForLevel]);
 
     return (
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
+            {rankUpAnimation.show && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '10%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 100,
+                    padding: '12px 25px',
+                    background: 'rgba(20, 30, 45, 0.85)',
+                    backdropFilter: 'blur(5px)',
+                    color: 'white',
+                    borderRadius: '12px',
+                    border: '1px solid #39FF14',
+                    boxShadow: '0 0 15px rgba(57, 255, 20, 0.4)',
+                    textAlign: 'center',
+                    animation: 'rankUp-toast-animation 3s ease-out forwards',
+                }}>
+                    <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>
+                        {rankUpAnimation.text} Vous montez au rang <span style={{color: '#39FF14'}}>#{rankUpAnimation.rank}</span> !
+                    </p>
+                </div>
+            )}
             <canvas ref={canvasRef} style={{ background: 'black', display: 'block' }} />
             {isLevelingUp && (
                 <div style={{
@@ -1530,6 +1654,16 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     </div>
                 </div>
             )}
+            <style>
+                {`
+                    @keyframes rankUp-toast-animation {
+                        0% { transform: translate(-50%, 100px); opacity: 0; }
+                        20% { transform: translate(-50%, 0); opacity: 1; }
+                        80% { transform: translate(-50%, 0); opacity: 1; }
+                        100% { transform: translate(-50%, 100px); opacity: 0; }
+                    }
+                `}
+            </style>
         </div>
     );
 };
