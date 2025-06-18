@@ -141,11 +141,11 @@ interface PiercingBlade {
     hitZombieIds: Set<number>;
 }
 
-interface BreathEffect {
+/* interface BreathEffect {
     id: number;
     angle: number;
     alpha: number;
-}
+} */
 
 interface HealthPotion {
     id: number;
