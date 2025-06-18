@@ -17,7 +17,7 @@ const ORB_KNOCKBACK_STRENGTH = 2.5; // Vélocité initiale du recul des agrafes
 
 // --- ZOMBIE ---
 const ZOMBIE_SIZE = 30;
-const ZOMBIE_SPEED = 0.7;
+const ZOMBIE_SPEED = 1.2;
 const ZOMBIE_DAMAGE = 1; // Dégâts réduits à 1
 const ZOMBIE_GREEN_COLOR = '#c0c0c0'; // Thème bureau: Trombones
 const ZOMBIE_BLUE_COLOR = '#555555'; // Thème bureau: Imprimantes
@@ -81,7 +81,7 @@ const PURPLE_ZOMBIE_GAP_ANGLE = Math.PI / 9; // 20 degrés de trou (plus petit)
 const PIERCING_BLADE_COOLDOWN = 3000;
 const PIERCING_BLADE_DAMAGE = 5;
 const PIERCING_BLADE_RANGE = 450;
-const PIERCING_BLADE_SPEED = 6;
+const PIERCING_BLADE_SPEED = 10;
 const PIERCING_BLADE_WIDTH = 10;
 const PIERCING_BLADE_LENGTH = 40;
 
@@ -197,10 +197,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const playerStateRef = useRef<PlayerState>({
         level: 1,
-        speedGround: 1.8,
-        speedWater: 1,
+        speedGround: 3,
+        speedWater: 1.5,
         fireRate: 1500,
-        orbSpeed: 1.2,
+        orbSpeed: 2.5,
         damage: 1,
         activePerks: new Set(),
         health: PLAYER_MAX_HEALTH,
@@ -240,6 +240,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const lastLightningTimeRef = useRef<number>(0);
     const playerHitCooldownEndRef = useRef<number>(0);
     const gameStartTimeRef = useRef<number>(0);
+    const lastUpdateTimeRef = useRef<number>(0);
     const zombieSpeedBonusRef = useRef<number>(0);
     const playerLastMoveTimeRef = useRef<number>(0);
     const lastMovementDirectionRef = useRef({ dx: 0, dy: -1 }); // Default: up
@@ -251,27 +252,27 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     useEffect(() => {
         const chairImg = new Image();
         chairImg.src = '/chaise.png';
-        chairImageRef.current = chairImg;
+        chairImg.onload = () => chairImageRef.current = chairImg;
 
         const postitImg = new Image();
         postitImg.src = '/postit.png';
-        postitImageRef.current = postitImg;
+        postitImg.onload = () => postitImageRef.current = postitImg;
 
         const bureauImg = new Image();
         bureauImg.src = '/bureau.png';
-        bureauImageRef.current = bureauImg;
+        bureauImg.onload = () => bureauImageRef.current = bureauImg;
 
         const imprimanteImg = new Image();
         imprimanteImg.src = '/imprimante.png';
-        imprimanteImageRef.current = imprimanteImg;
+        imprimanteImg.onload = () => imprimanteImageRef.current = imprimanteImg;
 
         const trombonneImg = new Image();
         trombonneImg.src = '/trombonne.png';
-        trombonneImageRef.current = trombonneImg;
+        trombonneImg.onload = () => trombonneImageRef.current = trombonneImg;
 
         const papierImg = new Image();
         papierImg.src = '/papier.png';
-        papierImageRef.current = papierImg;
+        papierImg.onload = () => papierImageRef.current = papierImg;
 
         const playerImg = new Image();
         playerImg.src = '/base-state.png';
@@ -475,6 +476,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             gameStartTimeRef.current = Date.now();
             playerLastMoveTimeRef.current = Date.now();
             introAnimationRef.current.startTime = Date.now();
+            lastUpdateTimeRef.current = Date.now();
             isInitializedRef.current = true;
         }
 
@@ -493,9 +495,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
         let animationFrameId: number;
 
-        const update = () => {
+        const update = (deltaTime: number) => {
             if (isLevelingUp || isGameOver) return;
             const now = Date.now();
+            const timeScale = deltaTime / (1000 / 60); // Normalize movement to a 60 FPS baseline
 
             if (introAnimationRef.current.isPlaying) {
                 const elapsedTime = now - introAnimationRef.current.startTime;
@@ -542,8 +545,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 const currentTile = getTileAt(cameraRef.current.x, cameraRef.current.y);
                 const speed = currentTile.type === 'water' ? playerStateRef.current.speedWater : playerStateRef.current.speedGround;
                 
-                cameraRef.current.x += dx * speed;
-                cameraRef.current.y += dy * speed;
+                cameraRef.current.x += dx * speed * timeScale;
+                cameraRef.current.y += dy * speed * timeScale;
             }
 
             if (!introAnimationRef.current.isPlaying) {
@@ -661,8 +664,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                         // Friction pour le ralentissement
                         const friction = 0.96; 
-                        zombie.knockbackVx *= friction;
-                        zombie.knockbackVy *= friction;
+                        zombie.knockbackVx *= Math.pow(friction, timeScale);
+                        zombie.knockbackVy *= Math.pow(friction, timeScale);
 
                         if (Math.hypot(zombie.knockbackVx, zombie.knockbackVy) < 0.1) {
                             zombie.knockbackVx = 0;
@@ -670,8 +673,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         }
                     }
 
-                    zombie.x += moveDx;
-                    zombie.y += moveDy;
+                    zombie.x += moveDx * timeScale;
+                    zombie.y += moveDy * timeScale;
                 });
 
                 // --- COLLISION RESOLUTION ---
@@ -812,8 +815,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         const dy = targetZombie.y - orb.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
                         if (dist > 1) {
-                            orb.x += (dx / dist) * playerStateRef.current.orbSpeed;
-                            orb.y += (dy / dist) * playerStateRef.current.orbSpeed;
+                            orb.x += (dx / dist) * playerStateRef.current.orbSpeed * timeScale;
+                            orb.y += (dy / dist) * playerStateRef.current.orbSpeed * timeScale;
                         }
                     } else { // Target is gone
                         orbsToRemove.add(orb.id);
@@ -826,7 +829,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 // Perk logic
                 // Poison
                 poisonZonesRef.current.forEach(zone => {
-                    zone.timer -= 16; // Approx delta time
+                    zone.timer -= deltaTime; 
                     if(zone.timer <= 0) {
                         zone.active = !zone.active;
                         zone.timer = zone.active ? POISON_DURATION : POISON_COOLDOWN;
@@ -883,7 +886,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 }
 
                 // Update lightning effects
-                lightningsRef.current.forEach(l => l.alpha -= 0.05);
+                lightningsRef.current.forEach(l => l.alpha -= 0.05 * timeScale);
                 lightningsRef.current = lightningsRef.current.filter(l => l.alpha > 0);
 
                 // Piercing Blade Perk
@@ -904,10 +907,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                 // Update Piercing Blades
                 bladesRef.current.forEach(blade => {
-                    blade.x += blade.dx * PIERCING_BLADE_SPEED;
-                    blade.y += blade.dy * PIERCING_BLADE_SPEED;
-                    blade.distanceTraveled += PIERCING_BLADE_SPEED;
-                    blade.angle += 0.2; // Rotation visuelle
+                    blade.x += blade.dx * PIERCING_BLADE_SPEED * timeScale;
+                    blade.y += blade.dy * PIERCING_BLADE_SPEED * timeScale;
+                    blade.distanceTraveled += PIERCING_BLADE_SPEED * timeScale;
+                    blade.angle += 0.2 * timeScale; // Rotation visuelle
 
                     zombiesRef.current.forEach(zombie => {
                         if (!blade.hitZombieIds.has(zombie.id)) {
@@ -1077,7 +1080,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 for (let y = visibleTilesStartY; y < visibleTilesEndY; y++) {
                     for (let x = visibleTilesStartX; x < visibleTilesEndX; x++) {
                         if (map[y][x].type === 'water' && Math.random() < 0.015) {
-                            const life = 40 + Math.random() * 50; // 0.6 to 1.5 seconds life
+                            const life = (40 + Math.random() * 50) * (1000/60); // 0.6 to 1.5 seconds life in ms
                             bubblesRef.current.push({
                                 id: now + Math.random(),
                                 x: x * TILE_SIZE + Math.random() * TILE_SIZE,
@@ -1092,7 +1095,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             }
 
             bubblesRef.current.forEach(bubble => {
-                bubble.life--;
+                bubble.life -= deltaTime;
                 const growthPhase = 1 - (bubble.life / bubble.maxLife);
                 bubble.radius = Math.sin(growthPhase * Math.PI) * 3; // Bubble grows and shrinks, max radius 3
             });
@@ -1429,7 +1432,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         };
         
         const gameLoop = () => {
-            update();
+            const now = Date.now();
+            const deltaTime = Math.min(now - lastUpdateTimeRef.current, 50); // Cap delta to prevent massive jumps
+            lastUpdateTimeRef.current = now;
+
+            update(deltaTime);
             draw();
             animationFrameId = requestAnimationFrame(gameLoop);
         };
