@@ -21,6 +21,13 @@ const PLAYER_MAX_HEALTH = 5; // Santé réduite
 const PLAYER_HIT_COOLDOWN = 1000; // 1s d'invincibilité après un coup
 const ORB_KNOCKBACK_STRENGTH = 2.5; // Vélocité initiale du recul des agrafes
 
+// --- COMPÉTENCE D'ESQUIVE (DASH) ---
+const DASH_SPEED_MULTIPLIER = 5; // Vitesse multipliée par 5 pendant le dash
+const DASH_DURATION = 200; // ms
+const DASH_COOLDOWN = 4000; // ms
+const DASH_AOE_DAMAGE = 10;
+const DASH_AOE_RADIUS = 150;
+
 // --- ZOMBIE ---
 const ZOMBIE_SIZE = 30;
 const ZOMBIE_SPEED = 1.2;
@@ -178,6 +185,35 @@ interface BloodParticle {
     size: number;
 }
 
+interface DashParticle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+    maxLife: number;
+    size: number;
+    color: string;
+}
+
+interface FlashEffect {
+    active: boolean;
+    startTime: number;
+    x: number;
+    y: number;
+    duration: number;
+    radius: number;
+}
+
+interface AoEEffect {
+    id: number;
+    x: number;
+    y: number;
+    startTime: number;
+    duration: number;
+    radius: number;
+}
+
 // Type pour les scores du classement
 type Score = { pseudo: string, score: number };
 
@@ -276,6 +312,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const lastBladeTimeRef = useRef<number>(0);
     const bloodParticlesRef = useRef<BloodParticle[]>([]);
     const joystickDirectionRef = useRef({ dx: 0, dy: 0 });
+    const isDashingRef = useRef<boolean>(false);
+    const dashEndTimeRef = useRef<number>(0);
+    const dashCooldownEndRef = useRef<number>(0);
+    const dashParticlesRef = useRef<DashParticle[]>([]);
+    const flashEffectRef = useRef<FlashEffect>({ active: false, startTime: 0, x: 0, y: 0, duration: 150, radius: 120 });
+    const aoeEffectsRef = useRef<AoEEffect[]>([]);
 
     // Ajout d'un token de session unique
     const sessionTokenRef = useRef<string>(crypto.randomUUID());
@@ -347,6 +389,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
     const [isGameOver, setIsGameOver] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
+    const [isDashOnCooldown, setIsDashOnCooldown] = useState(false);
 
     // --- State pour le classement en direct ---
     const [leaderboard, setLeaderboard] = useState<Score[]>([]);
@@ -531,6 +574,67 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         setIsLevelingUp(false);
     };
 
+    const triggerDash = () => {
+        const now = Date.now();
+        if (now > dashCooldownEndRef.current) {
+            const preDashX = cameraRef.current.x;
+            const preDashY = cameraRef.current.y;
+
+            // Apply AoE Damage
+            zombiesRef.current.forEach(zombie => {
+                const distSq = (preDashX - zombie.x)**2 + (preDashY - zombie.y)**2;
+                if (distSq < DASH_AOE_RADIUS * DASH_AOE_RADIUS) {
+                    zombie.health -= DASH_AOE_DAMAGE;
+                }
+            });
+
+            // Add visual effect for AoE shockwave
+            aoeEffectsRef.current.push({
+                id: now,
+                x: preDashX,
+                y: preDashY,
+                startTime: now,
+                duration: 300, // ms
+                radius: DASH_AOE_RADIUS,
+            });
+
+            isDashingRef.current = true;
+            dashEndTimeRef.current = now + DASH_DURATION;
+            dashCooldownEndRef.current = now + DASH_COOLDOWN;
+            setIsDashOnCooldown(true);
+
+            // Trigger flash effect
+            flashEffectRef.current = {
+                ...flashEffectRef.current,
+                active: true,
+                startTime: now,
+                x: cameraRef.current.x,
+                y: cameraRef.current.y,
+            };
+
+            // Create a burst of green smoke particles
+            const smokeParticleCount = 5;
+            const movementAngle = Math.atan2(lastMovementDirectionRef.current.dy, lastMovementDirectionRef.current.dx);
+            for (let i = 0; i < smokeParticleCount; i++) {
+                const angle = movementAngle + Math.PI + (Math.random() - 0.5) * (Math.PI / 2);
+                const pSpeed = Math.random() * 1.5 + 0.5;
+                const maxLife = 400 + Math.random() * 200;
+                dashParticlesRef.current.push({
+                    x: cameraRef.current.x,
+                    y: cameraRef.current.y,
+                    vx: Math.cos(angle) * pSpeed,
+                    vy: Math.sin(angle) * pSpeed,
+                    life: maxLife,
+                    maxLife: maxLife,
+                    size: Math.random() * 8 + 4,
+                    color: ''
+                });
+            }
+
+            setTimeout(() => setIsDashOnCooldown(false), DASH_COOLDOWN);
+        }
+    };
+
     const handleJoystickMove = (event: any) => {
         const { x, y } = event;
         if (x !== null && y !== null) {
@@ -600,7 +704,13 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         };
         handleResize();
 
-        const handleKeyDown = (e: KeyboardEvent) => { keysPressedRef.current[e.key.toLowerCase()] = true; };
+        const handleKeyDown = (e: KeyboardEvent) => {
+            keysPressedRef.current[e.key.toLowerCase()] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                triggerDash();
+            }
+        };
         const handleKeyUp = (e: KeyboardEvent) => { keysPressedRef.current[e.key.toLowerCase()] = false; };
 
         window.addEventListener('resize', handleResize);
@@ -609,10 +719,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
         let animationFrameId: number;
 
-        const update = (deltaTime: number) => {
+        const update = (deltaTime: number, now: number) => {
             if (isLevelingUp || isGameOver) return;
-            const now = Date.now();
-            const timeScale = deltaTime / (1000 / 60); // Normalize movement to a 60 FPS baseline
 
             if (introAnimationRef.current.isPlaying) {
                 const elapsedTime = now - introAnimationRef.current.startTime;
@@ -643,6 +751,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             // Player movement
             let dx = 0;
             let dy = 0;
+
+            // Stop dashing if duration is over
+            if (isDashingRef.current && now > dashEndTimeRef.current) {
+                isDashingRef.current = false;
+            }
+
             if (keysPressedRef.current['z'] || keysPressedRef.current['arrowup']) dy -= 1;
             if (keysPressedRef.current['s'] || keysPressedRef.current['arrowdown']) dy += 1;
             if (keysPressedRef.current['q'] || keysPressedRef.current['arrowleft']) dx -= 1;
@@ -662,10 +776,19 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 lastMovementDirectionRef.current = { dx, dy };
 
                 const currentTile = getTileAt(cameraRef.current.x, cameraRef.current.y);
-                const speed = currentTile.type === 'water' ? playerStateRef.current.speedWater : playerStateRef.current.speedGround;
+                let speed = currentTile.type === 'water' ? playerStateRef.current.speedWater : playerStateRef.current.speedGround;
                 
-                cameraRef.current.x += dx * speed * timeScale;
-                cameraRef.current.y += dy * speed * timeScale;
+                if (isDashingRef.current) {
+                    speed *= DASH_SPEED_MULTIPLIER;
+                }
+                
+                const newX = cameraRef.current.x + dx * speed * deltaTime;
+                const newY = cameraRef.current.y + dy * speed * deltaTime;
+
+                // Empêcher le joueur de sortir de la carte
+                const halfSize = PLAYER_SIZE / 2;
+                cameraRef.current.x = Math.max(halfSize, Math.min(newX, MAP_WIDTH * TILE_SIZE - halfSize));
+                cameraRef.current.y = Math.max(halfSize, Math.min(newY, MAP_HEIGHT * TILE_SIZE - halfSize));
             }
 
             if (!introAnimationRef.current.isPlaying) {
@@ -783,8 +906,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                         // Friction pour le ralentissement
                         const friction = 0.96; 
-                        zombie.knockbackVx *= Math.pow(friction, timeScale);
-                        zombie.knockbackVy *= Math.pow(friction, timeScale);
+                        zombie.knockbackVx *= Math.pow(friction, deltaTime / 1000);
+                        zombie.knockbackVy *= Math.pow(friction, deltaTime / 1000);
 
                         if (Math.hypot(zombie.knockbackVx, zombie.knockbackVy) < 0.1) {
                             zombie.knockbackVx = 0;
@@ -792,8 +915,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         }
                     }
 
-                    zombie.x += moveDx * timeScale;
-                    zombie.y += moveDy * timeScale;
+                    zombie.x += moveDx * deltaTime;
+                    zombie.y += moveDy * deltaTime;
                 });
 
                 // --- COLLISION RESOLUTION ---
@@ -843,7 +966,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                             // Les dégâts s'appliquent pour tous les zombies, sauf s'ils sont en train de reculer
                             const isBeingKnockedBack = zombie.knockbackVx || zombie.knockbackVy;
-                            if (now > playerHitCooldownEndRef.current && !isBeingKnockedBack) {
+                            if (now > playerHitCooldownEndRef.current && !isBeingKnockedBack && !isDashingRef.current) {
                                 playerStateRef.current.health -= ZOMBIE_DAMAGE;
                                 playerHitCooldownEndRef.current = now + PLAYER_HIT_COOLDOWN;
                                 spawnBloodParticles(cameraRef.current.x, cameraRef.current.y, 40, '#ff4d4d'); // Sang du joueur (rouge vif)
@@ -937,8 +1060,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         const dy = targetZombie.y - orb.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
                         if (dist > 1) {
-                            orb.x += (dx / dist) * playerStateRef.current.orbSpeed * timeScale;
-                            orb.y += (dy / dist) * playerStateRef.current.orbSpeed * timeScale;
+                            orb.x += (dx / dist) * playerStateRef.current.orbSpeed * deltaTime;
+                            orb.y += (dy / dist) * playerStateRef.current.orbSpeed * deltaTime;
                         }
                     } else { // Target is gone
                         orbsToRemove.add(orb.id);
@@ -988,7 +1111,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 }
 
                 // Update lightning effects
-                lightningsRef.current.forEach(l => l.alpha -= 0.05 * timeScale);
+                lightningsRef.current.forEach(l => l.alpha -= 0.05 * deltaTime);
                 lightningsRef.current = lightningsRef.current.filter(l => l.alpha > 0);
 
                 // Piercing Blade Perk
@@ -1009,10 +1132,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                 // Update Piercing Blades
                 bladesRef.current.forEach(blade => {
-                    blade.x += blade.dx * PIERCING_BLADE_SPEED * timeScale;
-                    blade.y += blade.dy * PIERCING_BLADE_SPEED * timeScale;
-                    blade.distanceTraveled += PIERCING_BLADE_SPEED * timeScale;
-                    blade.angle += 0.2 * timeScale; // Rotation visuelle
+                    blade.x += blade.dx * PIERCING_BLADE_SPEED * deltaTime;
+                    blade.y += blade.dy * PIERCING_BLADE_SPEED * deltaTime;
+                    blade.distanceTraveled += PIERCING_BLADE_SPEED * deltaTime;
+                    blade.angle += 0.2 * deltaTime; // Rotation visuelle
 
                     zombiesRef.current.forEach(zombie => {
                         if (!blade.hitZombieIds.has(zombie.id)) {
@@ -1238,9 +1361,20 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 p.life--;
             });
             bloodParticlesRef.current = bloodParticlesRef.current.filter(p => p.life > 0);
-        };
 
-        const draw = () => {
+            // Mettre à jour les particules de dash
+            dashParticlesRef.current.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= deltaTime
+            });
+            dashParticlesRef.current = dashParticlesRef.current.filter(p => p.life > 0);
+
+            // Update AoE effects
+            aoeEffectsRef.current = aoeEffectsRef.current.filter(effect => now < effect.startTime + effect.duration);
+        };
+        
+        const draw = (now: number) => {
             if (!context || !canvas) return;
             context.clearRect(0, 0, canvas.width, canvas.height);
             context.save();
@@ -1318,6 +1452,51 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 }
             }
             
+            context.save();
+            context.globalCompositeOperation = 'lighter';
+
+            // Draw flash
+            const flash = flashEffectRef.current;
+            if (flash.active) {
+                const elapsed = now - flash.startTime;
+                if (elapsed < flash.duration) {
+                    const lifeRatio = elapsed / flash.duration;
+                    const easeOut = 1 - Math.pow(1 - lifeRatio, 4);
+                    
+                    const currentRadius = flash.radius * easeOut;
+                    const currentOpacity = 1 - lifeRatio;
+
+                    const gradient = context.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, currentRadius);
+                    gradient.addColorStop(0, `rgba(173, 255, 47, ${currentOpacity * 0.8})`);
+                    gradient.addColorStop(0.5, `rgba(57, 255, 20, ${currentOpacity * 0.5})`);
+                    gradient.addColorStop(1, `rgba(0, 200, 0, 0)`);
+
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(flash.x, flash.y, currentRadius, 0, Math.PI * 2);
+                    context.fill();
+                } else {
+                    flash.active = false;
+                }
+            }
+
+            // Draw gas particles
+            dashParticlesRef.current.forEach(p => {
+                const lifeRatio = p.life / p.maxLife;
+                const radius = p.size * lifeRatio;
+
+                const gradient = context.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(0, radius));
+                gradient.addColorStop(0, `rgba(152, 251, 152, ${lifeRatio * 0.7})`);
+                gradient.addColorStop(0.7, `rgba(0, 250, 154, ${lifeRatio * 0.3})`);
+                gradient.addColorStop(1, `rgba(46, 139, 87, 0)`);
+
+                context.fillStyle = gradient;
+                context.beginPath();
+                context.arc(p.x, p.y, Math.max(0, radius), 0, Math.PI * 2);
+                context.fill();
+            });
+            context.restore();
+
             // Draw blood particles
             bloodParticlesRef.current.forEach(p => {
                 context.fillStyle = p.color;
@@ -1500,7 +1679,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             });
             
             // Draw Player
-            const now = Date.now();
             const isInvincible = now < playerHitCooldownEndRef.current;
             
             const playerX = cameraRef.current.x;
@@ -1623,9 +1801,77 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillText(`${Math.floor(progressPercentage*100)}% vers #1`, progressTextX, progressY - 5);
             }
             
+            // --- CADRE BAS (Compétences) ---
+            if (!isMobile) {
+                const skillsFrameX = frameX;
+                const skillsFrameY = canvas.height - 75;
+                const skillsFrameWidth = frameWidth;
+                const skillsFrameHeight = 60;
+                drawPixelatedFrame(skillsFrameX, skillsFrameY, skillsFrameWidth, skillsFrameHeight);
+
+                // Compétence de Dash
+                context.font = 'bold 16px "Courier New", Courier, monospace';
+                context.fillStyle = 'white';
+                context.fillText('💨 PET TOXIQUE', skillsFrameX + 15, skillsFrameY + 25);
+                context.font = '12px "Courier New", Courier, monospace';
+                context.fillStyle = '#ccc';
+                context.textAlign = 'right';
+                context.fillText('[ESPACE]', skillsFrameX + skillsFrameWidth - 15, skillsFrameY + 25);
+                context.textAlign = 'left';
+
+
+                const cooldownBarY = skillsFrameY + 40;
+                const cooldownBarWidth = skillsFrameWidth - 30;
+                const timeSinceCooldownStart = Math.max(0, now - (dashCooldownEndRef.current - DASH_COOLDOWN));
+                const cooldownPercentage = Math.min(timeSinceCooldownStart / DASH_COOLDOWN, 1);
+
+                context.fillStyle = '#333';
+                context.fillRect(skillsFrameX + 15, cooldownBarY, cooldownBarWidth, 10);
+                context.fillStyle = cooldownPercentage >= 1 ? '#39FF14' : 'orange';
+                context.fillRect(skillsFrameX + 15, cooldownBarY, cooldownBarWidth * cooldownPercentage, 10);
+                context.strokeStyle = '#666';
+                context.strokeRect(skillsFrameX + 15, cooldownBarY, cooldownBarWidth, 10);
+            }
+            
             // Reset context
             context.shadowBlur = 0;
             context.textAlign = 'left';
+
+            // Draw dash particles
+            dashParticlesRef.current.forEach(p => {
+                const lifeRatio = p.life / p.maxLife;
+                context.fillStyle = `rgba(255, 255, 255, ${lifeRatio * 0.7})`;
+                context.beginPath();
+                context.arc(p.x, p.y, (1 - lifeRatio) * 15, 0, Math.PI * 2);
+                context.fill();
+            });
+
+            // Draw AoE shockwave effect
+            aoeEffectsRef.current.forEach(effect => {
+                const elapsed = now - effect.startTime;
+                const lifeRatio = elapsed / effect.duration;
+                const easeOut = 1 - Math.pow(1 - lifeRatio, 2);
+
+                const currentRadius = effect.radius * easeOut;
+                const currentOpacity = 1 - lifeRatio;
+
+                context.strokeStyle = `rgba(127, 255, 0, ${currentOpacity * 0.9})`; // Chartreuse
+                context.lineWidth = 4 * (1 - easeOut);
+                context.beginPath();
+                context.arc(effect.x, effect.y, Math.max(0, currentRadius), 0, Math.PI * 2);
+                context.stroke();
+            });
+
+            context.save();
+            context.globalCompositeOperation = 'lighter';
+
+            // Draw blood particles
+            bloodParticlesRef.current.forEach(p => {
+                context.fillStyle = p.color;
+                context.fillRect(p.x, p.y, p.size, p.size);
+            });
+
+            context.restore();
         };
         
         const gameLoop = () => {
@@ -1633,8 +1879,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             const deltaTime = Math.min(now - lastUpdateTimeRef.current, 50); // Cap delta to prevent massive jumps
             lastUpdateTimeRef.current = now;
 
-            update(deltaTime);
-            draw();
+            update(deltaTime, now);
+            draw(now);
             animationFrameId = requestAnimationFrame(gameLoop);
         };
         
@@ -1724,6 +1970,31 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         stop={handleJoystickStop}
                     />
                 </div>
+            )}
+            {isMobile && (
+                 <div style={{ position: 'absolute', bottom: '50px', right: '150px', zIndex: 10 }}>
+                     <button
+                         onClick={triggerDash}
+                         disabled={isDashOnCooldown}
+                         style={{
+                             width: '80px',
+                             height: '80px',
+                             borderRadius: '50%',
+                             background: isDashOnCooldown ? 'rgba(100, 100, 100, 0.2)' : 'rgba(255, 255, 255, 0.2)',
+                             border: '2px solid rgba(255, 255, 255, 0.5)',
+                             color: 'white',
+                             fontSize: '1.5rem',
+                             display: 'flex',
+                             alignItems: 'center',
+                             justifyContent: 'center',
+                             cursor: isDashOnCooldown ? 'not-allowed' : 'pointer',
+                             opacity: isDashOnCooldown ? 0.5 : 1,
+                             transition: 'opacity 0.3s, background 0.3s'
+                         }}
+                     >
+                         💨
+                     </button>
+                 </div>
             )}
         </div>
     );

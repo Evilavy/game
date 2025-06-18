@@ -147,6 +147,21 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
                     </div>
                 )}
 
+                <div style={{
+                    background: 'rgba(255, 235, 59, 0.1)',
+                    border: '1px solid rgba(255, 235, 59, 0.5)',
+                    borderRadius: '8px',
+                    padding: '15px',
+                    marginTop: '20px',
+                    color: '#fff',
+                    textAlign: 'center'
+                }}>
+                    <h3 style={{ margin: '0 0 10px 0', color: '#FFEB3B' }}>⚠️ Mise à jour importante</h3>
+                    <p style={{ margin: 0 }}>
+                        Avec l'ajout du nouvel atout "Pet Toxique" et suite à des activités de triche, le classement a été réinitialisé pour garantir une compétition équitable. Bonne chance à tous !
+                    </p>
+                </div>
+
                 <div>
                     <button style={buttonStyles} onClick={onPlay}>JOUER</button>
                     <button style={buttonStyles} onClick={onShowLeaderboard}>CLASSEMENT</button>
