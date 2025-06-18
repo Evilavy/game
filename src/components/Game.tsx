@@ -167,6 +167,13 @@ interface Bubble {
     life: number;
 }
 
+export interface ScoreData {
+    score: number;
+    sessionToken: string;
+    startTime: number;
+    endTime: number;
+}
+
 type PerkID = 'FIRE_RATE' | 'DAMAGE' | 'POISON' | 'LIGHTNING' | 'PIERCING_BLADE';
 interface Perk {
     id: PerkID;
@@ -187,7 +194,7 @@ interface PlayerState {
 }
 
 interface GameProps {
-    onGameOver: (finalScore: number) => void;
+    onGameOver: (scoreData: ScoreData | number) => void;
 }
 
 const ALL_PERKS: Perk[] = [
@@ -277,7 +284,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         }
         
         // Création de la signature
-        const scoreData = {
+        const scoreData: ScoreData = {
             score: Math.floor(finalScore),
             sessionToken: sessionTokenRef.current,
             startTime: gameStartTimeRef.current,

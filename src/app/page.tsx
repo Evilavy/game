@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, FormEvent } from 'react';
-import Game from '@/components/Game';
+import Game, { ScoreData } from '@/components/Game';
 import Image from 'next/image';
 
 type GameState = 'home' | 'playing' | 'gameover' | 'leaderboard';
@@ -169,10 +169,11 @@ const TAUNT_MESSAGES = [
     "{topPlayer} doit bien rire en voyant ton score. Essaie encore, peut-être ?"
 ];
 
-const GameOverScreen = ({ score, onLeaderboard }: { score: any, onLeaderboard: () => void }) => {
+const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, onLeaderboard: () => void }) => {
     const [pseudo, setPseudo] = useState('');
     const [topScore, setTopScore] = useState<Score | null>(null);
     const [taunt, setTaunt] = useState('');
+    const displayScore = typeof score === 'number' ? score : score.score;
 
     useEffect(() => {
         const fetchTopScore = async () => {
@@ -185,7 +186,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: any, onLeaderboard: (
                         setTopScore(top);
 
                         // Sélectionner une moquerie si le score n'est pas battu
-                        if (score.score < top.score) {
+                        if (displayScore < top.score) {
                             const randomIndex = Math.floor(Math.random() * TAUNT_MESSAGES.length);
                             const randomTaunt = TAUNT_MESSAGES[randomIndex].replace('{topPlayer}', top.pseudo);
                             setTaunt(randomTaunt);
@@ -197,11 +198,11 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: any, onLeaderboard: (
             }
         };
         fetchTopScore();
-    }, [score]);
+    }, [displayScore]);
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        if (pseudo.length !== 3) return;
+        if (pseudo.length !== 3 || typeof score === 'number') return;
 
         const payload = { pseudo, score: score.score, sessionToken: score.sessionToken, startTime: score.startTime, endTime: score.endTime };
         console.log("Envoi du score au serveur :", payload);
@@ -234,16 +235,16 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: any, onLeaderboard: (
             <div style={overlayStyles}></div>
             <div style={{ position: 'relative', zIndex: 1 }}>
                 <h2 style={{ fontSize: '3rem' }}>BURNOUT</h2>
-                <p style={{ fontSize: '1.5rem' }}>Votre score : {score.score.toLocaleString()}</p>
+                <p style={{ fontSize: '1.5rem' }}>Votre score : {displayScore.toLocaleString()}</p>
 
                 {topScore && (
                     <div style={{ marginTop: '1rem', color: '#a0aec0', minHeight: '50px' }}>
-                        {score.score >= topScore.score && pseudo.length < 3 ? (
+                        {displayScore >= topScore.score && pseudo.length < 3 ? (
                              <p style={{ color: '#ffd700', fontWeight: 'bold' }}>NOUVEAU MEILLEUR SCORE !</p>
                         ) : taunt ? (
                             <p style={{ fontStyle: 'italic' }}>&quot;{taunt}&quot;</p>
-                        ) : score.score < topScore.score ? (
-                           <p>Vous êtes à {(topScore.score - score.score).toLocaleString()} points de détrôner {topScore.pseudo} !</p>
+                        ) : displayScore < topScore.score ? (
+                           <p>Vous êtes à {(topScore.score - displayScore).toLocaleString()} points de détrôner {topScore.pseudo} !</p>
                         ) : null}
                     </div>
                 )}
@@ -418,10 +419,10 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
 
 export default function Page() {
     const [gameState, setGameState] = useState<GameState>('home');
-    const [finalScore, setFinalScore] = useState(0);
+    const [finalScore, setFinalScore] = useState<ScoreData | number>(0);
 
-    const handleGameOver = (score: number) => {
-        setFinalScore(score);
+    const handleGameOver = (scoreData: ScoreData | number) => {
+        setFinalScore(scoreData);
         setGameState('gameover');
     };
 
