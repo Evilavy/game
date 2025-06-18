@@ -3,6 +3,7 @@
 import React, { useState, useEffect, FormEvent } from 'react';
 import Game, { ScoreData } from '@/components/Game';
 import Image from 'next/image';
+import Cookies from 'js-cookie';
 
 type GameState = 'home' | 'playing' | 'gameover' | 'leaderboard';
 type Score = { pseudo: string, score: number, end_time?: string };
@@ -147,20 +148,6 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
                     </div>
                 )}
 
-                <div style={{
-                    background: 'rgba(255, 235, 59, 0.1)',
-                    border: '1px solid rgba(255, 235, 59, 0.5)',
-                    borderRadius: '8px',
-                    padding: '15px',
-                    marginTop: '20px',
-                    color: '#fff',
-                    textAlign: 'center'
-                }}>
-                    <h3 style={{ margin: '0 0 10px 0', color: '#FFEB3B' }}>⚠️ Mise à jour importante</h3>
-                    <p style={{ margin: 0 }}>
-                        Avec l'ajout du nouvel atout "Pet Toxique" et suite à des activités de triche, le classement a été réinitialisé pour garantir une compétition équitable. Bonne chance à tous !
-                    </p>
-                </div>
 
                 <div>
                     <button style={buttonStyles} onClick={onPlay}>JOUER</button>
@@ -185,7 +172,10 @@ const TAUNT_MESSAGES = [
 ];
 
 const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, onLeaderboard: () => void }) => {
-    const [pseudo, setPseudo] = useState('');
+    const [pseudo, setPseudo] = useState(() => {
+        // Charger le pseudo depuis les cookies au démarrage
+        return Cookies.get('lastPseudo') || '';
+    });
     const [error, setError] = useState('');
     const [topScore, setTopScore] = useState<Score | null>(null);
     const [taunt, setTaunt] = useState('');
@@ -231,6 +221,9 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
             setError('Le pseudo doit contenir entre 1 et 3 lettres (A-Z).');
             return;
         }
+
+        // Sauvegarder le pseudo dans les cookies
+        Cookies.set('lastPseudo', pseudo, { expires: 365 }); // Expire dans 1 an
 
         const payload = { pseudo, score: score.score, sessionToken: score.sessionToken, startTime: score.startTime, endTime: score.endTime };
         console.log("Envoi du score au serveur :", payload);

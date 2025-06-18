@@ -5,9 +5,9 @@ import { createNoise2D } from 'simplex-noise';
 import { Joystick } from 'react-joystick-component';
 
 // --- CONSTANTES DE SÉCURITÉ ---
-const MIN_GAME_DURATION = 0; // 0 secondes minimum
+const MIN_GAME_DURATION = 100000; // 10 secondes minimum
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
-const MAX_SCORE_PER_MINUTE = 2000; // Score maximum possible par minute
+const MAX_SCORE_PER_MINUTE = 9000000; // Score maximum possible par minute
 
 // --- CONSTANTES DE JEU ---
 const TILE_SIZE = 50;
@@ -354,18 +354,22 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     // Déplacer handleGameOver en dehors du useEffect
     const handleGameOver = useCallback((finalScore: number) => {
         const gameDuration = Date.now() - gameStartTimeRef.current;
+        console.log("Durée de la partie:", gameDuration, "ms");
         
         // Vérification de la durée minimum
         if (gameDuration < MIN_GAME_DURATION) {
-            console.error("Game duration too short");
+            console.error(`Durée de partie trop courte (${gameDuration}ms < ${MIN_GAME_DURATION}ms)`);
+            alert("La partie est trop courte pour être enregistrée (minimum 10 secondes).");
             onGameOver(0);
             return;
         }
         
         // Vérification du score maximum possible
         const maxPossibleScore = Math.ceil((gameDuration / 60000) * MAX_SCORE_PER_MINUTE);
+        console.log("Score final:", finalScore, "Score maximum possible:", maxPossibleScore);
         if (finalScore > maxPossibleScore) {
-            console.error("Score exceeds maximum possible");
+            console.error(`Score trop élevé (${finalScore} > ${maxPossibleScore})`);
+            alert("Une erreur est survenue lors de la validation du score.");
             onGameOver(0);
             return;
         }
