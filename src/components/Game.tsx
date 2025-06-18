@@ -49,14 +49,14 @@ const HEALTH_POTION_DROP_CHANCE = 0.02; // 2% de chance (1 sur 50)
 const HEALTH_POTION_SIZE = 20;
 
 // --- COMPÉTENCES (PERKS) ---
-const PERK_TYPE_FIRE_RATE = 'FIRE_RATE';
-const PERK_TYPE_DAMAGE = 'DAMAGE';
-const PERK_TYPE_POISON = 'POISON';
-const PERK_TYPE_LIGHTNING = 'LIGHTNING';
-const BREATH_COOLDOWN = 3000;
-const BREATH_DAMAGE = 5;
-const BREATH_RANGE = 200;
-const BREATH_WIDTH_ANGLE = Math.PI / 4; // 45 degrees
+// const PERK_TYPE_FIRE_RATE = 'FIRE_RATE';
+// const PERK_TYPE_DAMAGE = 'DAMAGE';
+// const PERK_TYPE_POISON = 'POISON';
+// const PERK_TYPE_LIGHTNING = 'LIGHTNING';
+// const BREATH_COOLDOWN = 3000;
+// const BREATH_DAMAGE = 5;
+// const BREATH_RANGE = 200;
+// const BREATH_WIDTH_ANGLE = Math.PI / 4; // 45 degrees
 
 // Zone de poison
 const POISON_ZONE_RADIUS = 150;
@@ -215,7 +215,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const poisonZonesRef = useRef<PoisonZone[]>([]);
     const lightningsRef = useRef<Lightning[]>([]);
     const bladesRef = useRef<PiercingBlade[]>([]);
-    const breathEffectsRef = useRef<BreathEffect[]>([]);
     const healthPotionsRef = useRef<HealthPotion[]>([]);
     const bubblesRef = useRef<Bubble[]>([]);
     const introAnimationRef = useRef({
@@ -348,27 +347,27 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         return generatedMap;
     }, [noise2D]);
     
-    const getTileAt = (px: number, py: number): Tile => {
+    const getTileAt = useCallback((px: number, py: number): Tile => {
         const tileX = Math.floor(px / TILE_SIZE);
         const tileY = Math.floor(py / TILE_SIZE);
         return map[tileY]?.[tileX] || { type: 'ground' };
-    };
+    }, [map]);
 
-    const xpForNextLevel = (level: number) => Math.floor(XP_BASE_REQ * Math.pow(XP_GROWTH_FACTOR, level - 1));
+    const xpForNextLevel = useCallback((level: number) => Math.floor(XP_BASE_REQ * Math.pow(XP_GROWTH_FACTOR, level - 1)), []);
 
-    const totalXpForLevel = (level: number) => {
+    const totalXpForLevel = useCallback((level: number) => {
         let total = 0;
         for (let i = 1; i < level; i++) {
             total += xpForNextLevel(i);
         }
         return total;
-    };
+    }, [xpForNextLevel]);
 
-    const getRandomPerks = (): Perk[] => {
+    const getRandomPerks = useCallback((): Perk[] => {
         const unselectedPerks = ALL_PERKS.filter(p => !playerStateRef.current.activePerks.has(p.id));
         const shuffled = unselectedPerks.sort(() => 0.5 - Math.random());
         return shuffled.slice(0, 3);
-    };
+    }, []);
 
     const spawnPurpleCircle = useCallback((centerX: number, centerY: number) => {
         // Les positions des brèches sont maintenant aléatoires
@@ -770,14 +769,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         }
                     }
 
-                    let zombieHit = false;
                     orbsRef.current.forEach(orb => {
                         if (orb.targetId === zombie.id) {
                             const distSq = (orb.x - zombie.x)**2 + (orb.y - zombie.y)**2;
                             if (distSq < (ZOMBIE_SIZE / 2)**2) {
                                 zombie.health -= playerStateRef.current.damage;
                                 orbsToRemove.add(orb.id);
-                                zombieHit = true;
 
                                 // Ajout du recul (knockback)
                                 if (zombie.color !== YELLOW_ZOMBIE_COLOR) {
@@ -1445,7 +1442,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             window.removeEventListener('keyup', handleKeyUp);
             cancelAnimationFrame(animationFrameId);
         };
-    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, onGameOver]);
+    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, onGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel]);
 
     return (
         <div style={{ position: 'relative' }}>

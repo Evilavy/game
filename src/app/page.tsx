@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, FormEvent } from 'react';
 import Game from '@/components/Game';
+import Image from 'next/image';
 
 type GameState = 'home' | 'playing' | 'gameover' | 'leaderboard';
 type Score = { pseudo: string, score: number };
@@ -100,11 +101,11 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
 
     return (
         <div style={containerStyles}>
-            <img src="/Bureau-Infernale.png" alt="Background" style={{ ...backgroundStyles, objectFit: 'cover' }} />
+            <Image src="/Bureau-Infernale.png" alt="Background" fill style={{ objectFit: 'cover', zIndex: -2 }} />
             <div style={overlayStyles}></div>
             <div style={{ position: 'relative', zIndex: 1, padding: '0 20px' }}>
                 <h1 style={{ fontSize: '4rem', marginBottom: '1rem', textShadow: '2px 2px 4px #000' }}>
-                    Bureau de l'Enfer
+                    Bureau de l&apos;Enfer
                 </h1>
                 
                 <div style={{
@@ -212,7 +213,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: number, onLeaderboard
 
     return (
         <div style={containerStyles}>
-            <img src="/Bureau-Infernale.png" alt="Background" style={{ ...backgroundStyles, objectFit: 'cover', filter: 'blur(5px) grayscale(80%)' }} />
+            <Image src="/Bureau-Infernale.png" alt="Background" fill style={{ objectFit: 'cover', filter: 'blur(5px) grayscale(80%)', zIndex: -2 }} />
             <div style={overlayStyles}></div>
             <div style={{ position: 'relative', zIndex: 1 }}>
                 <h2 style={{ fontSize: '3rem' }}>BURNOUT</h2>
@@ -223,7 +224,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: number, onLeaderboard
                         {score >= topScore.score && pseudo.length < 3 ? (
                              <p style={{ color: '#ffd700', fontWeight: 'bold' }}>NOUVEAU MEILLEUR SCORE !</p>
                         ) : taunt ? (
-                            <p style={{ fontStyle: 'italic' }}>"{taunt}"</p>
+                            <p style={{ fontStyle: 'italic' }}>&quot;{taunt}&quot;</p>
                         ) : score < topScore.score ? (
                            <p>Vous êtes à {(topScore.score - score).toLocaleString()} points de détrôner {topScore.pseudo} !</p>
                         ) : null}
@@ -275,8 +276,10 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                 } else {
                     throw new Error('Les données reçues ne sont pas valides.');
                 }
-            } catch (err: any) {
-                setError(err.message);
+            } catch (err: unknown) {
+                if (err instanceof Error) {
+                    setError(err.message);
+                }
                 console.error(err);
             } finally {
                 setLoading(false);
@@ -287,7 +290,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
 
     return (
         <div style={containerStyles}>
-             <img src="/Bureau-Infernale.png" alt="Background" style={{ ...backgroundStyles, objectFit: 'cover', filter: 'blur(5px)' }} />
+             <Image src="/Bureau-Infernale.png" alt="Background" fill style={{ objectFit: 'cover', filter: 'blur(5px)', zIndex: -2 }} />
             <div style={overlayStyles}></div>
             <div style={{ position: 'relative', zIndex: 1, maxHeight: '80vh', overflowY: 'auto', padding: '0 20px' }}>
                 <h2 style={{ fontSize: '3rem' }}>Meilleurs Employés</h2>
@@ -318,7 +321,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                                     <span>{s.score.toLocaleString()}</span>
                                 </li>
                             );
-                        }) : <p>Personne n'a encore survécu...</p>}
+                        }) : <p>Personne n&apos;a encore survécu...</p>}
                     </ol>
                 )}
                 <button onClick={onHome} style={{ ...buttonStyles, marginTop: '2rem' }}>Accueil</button>
