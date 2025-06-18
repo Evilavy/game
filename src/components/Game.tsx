@@ -322,6 +322,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     // Ajout d'un token de session unique
     const sessionTokenRef = useRef<string>(crypto.randomUUID());
 
+    const displayedScoreRef = useRef<number>(0);
+
     // Déplacer handleGameOver en dehors du useEffect
     const handleGameOver = useCallback((finalScore: number) => {
         const gameDuration = Date.now() - gameStartTimeRef.current;
@@ -1721,7 +1723,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             const frameX = 15;
             const frameY = 15;
             const frameWidth = 220;
-            const frameHeight = 110;
+            const frameHeight = 130;
             drawPixelatedFrame(frameX, frameY, frameWidth, frameHeight);
 
             // Niveau
@@ -1732,8 +1734,13 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             context.textAlign = 'left';
             context.fillText(`NIVEAU ${playerStateRef.current.level}`, frameX + 15, frameY + 30);
             
+            // Score
+            const currentTotalXp = Math.floor(totalXpForLevel(playerStateRef.current.level) + xpRef.current);
+            context.font = '16px "Courier New", Courier, monospace';
+            context.fillText(`SCORE: ${currentTotalXp}`, frameX + 15, frameY + 55);
+
             // Barre d'XP
-            const xpBarY = frameY + 45;
+            const xpBarY = frameY + 70;
             const xpBarWidth = frameWidth - 30;
             const requiredXp = xpForNextLevel(playerStateRef.current.level);
             const xpPercentage = (xpRef.current / requiredXp);
@@ -1749,7 +1756,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             const maxHealth = playerStateRef.current.maxHealth;
             const heartSize = 24;
             const heartSpacing = 6;
-            const heartsY = frameY + 75;
+            const heartsY = frameY + 95;
             
             for (let i = 0; i < maxHealth; i++) {
                 const heartX = frameX + 15 + i * (heartSize + heartSpacing);

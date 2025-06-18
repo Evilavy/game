@@ -186,6 +186,7 @@ const TAUNT_MESSAGES = [
 
 const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, onLeaderboard: () => void }) => {
     const [pseudo, setPseudo] = useState('');
+    const [error, setError] = useState('');
     const [topScore, setTopScore] = useState<Score | null>(null);
     const [taunt, setTaunt] = useState('');
     const displayScore = typeof score === 'number' ? score : score.score;
@@ -215,9 +216,23 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
         fetchTopScore();
     }, [displayScore]);
 
+    const handlePseudoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        // Autorise uniquement les lettres, et jusqu'à 10 caractères
+        if (/^[a-zA-Z]*$/.test(value) && value.length <= 10) {
+            setPseudo(value.toUpperCase());
+            setError('');
+        } else {
+            setError('Uniquement 10 lettres autorisées (A-Z).');
+        }
+    };
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        if (pseudo.length !== 3 || typeof score === 'number') return;
+        if (pseudo.length < 3 || pseudo.length > 10 || !/^[a-zA-Z]+$/.test(pseudo) || typeof score === 'number') {
+            setError('Le pseudo doit contenir entre 3 et 10 lettres (A-Z).');
+            return;
+        }
 
         const payload = { pseudo, score: score.score, sessionToken: score.sessionToken, startTime: score.startTime, endTime: score.endTime };
         console.log("Envoi du score au serveur :", payload);
@@ -248,47 +263,68 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
         <div style={containerStyles}>
             <Image src="/Bureau-Infernale.png" alt="Background" fill style={{ objectFit: 'cover', filter: 'blur(5px) grayscale(80%)', zIndex: -2 }} />
             <div style={overlayStyles}></div>
-            <div style={{ position: 'relative', zIndex: 1 }}>
-                <h2 style={{ fontSize: '3rem' }}>BURNOUT</h2>
-                <p style={{ fontSize: '1.5rem' }}>Votre score : {displayScore.toLocaleString()}</p>
+            <div style={{ position: 'relative', zIndex: 1, padding: '0 20px', maxWidth: '600px' }}>
+                <h1 style={{ fontSize: '4.5rem', margin: '0 0 1rem 0', color: '#E53E3E', textShadow: '3px 3px 6px #000' }}>
+                    GAME OVER
+                </h1>
+                
+                <div style={{
+                    background: 'rgba(45, 55, 72, 0.8)',
+                    padding: '2rem',
+                    borderRadius: '10px',
+                    border: '2px solid #718096'
+                }}>
+                    <h2 style={{ fontSize: '2rem', margin: '0 0 1rem 0' }}>Votre score final :</h2>
+                    <p style={{ fontSize: '3.5rem', margin: 0, fontWeight: 'bold', color: '#63B3ED' }}>
+                        <AnimatedNumber value={displayScore} />
+                    </p>
+                </div>
 
-                {topScore && (
-                    <div style={{ marginTop: '1rem', color: '#a0aec0', minHeight: '50px' }}>
-                        {displayScore >= topScore.score && pseudo.length < 3 ? (
-                             <p style={{ color: '#ffd700', fontWeight: 'bold' }}>NOUVEAU MEILLEUR SCORE !</p>
-                        ) : taunt ? (
-                            <p style={{ fontStyle: 'italic' }}>&quot;{taunt}&quot;</p>
-                        ) : displayScore < topScore.score ? (
-                           <p>Vous êtes à {(topScore.score - displayScore).toLocaleString()} points de détrôner {topScore.pseudo} !</p>
-                        ) : null}
+                {topScore && displayScore >= topScore.score && (
+                    <div style={{ margin: '1.5rem 0', color: '#38A169', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                        🎉 NOUVEAU MEILLEUR SCORE ! 🎉
                     </div>
                 )}
+                {taunt && (
+                    <div style={{ margin: '1.5rem 0', fontStyle: 'italic', color: '#A0AEC0' }}>
+                       "{taunt}"
+                    </div>
+                )}
+                
+                {typeof score !== 'number' && (
+                    <form onSubmit={handleSubmit} style={{ marginTop: '2rem' }}>
+                        <input
+                            type="text"
+                            value={pseudo}
+                            onChange={handlePseudoChange}
+                            placeholder="VOTRE PSEUDO (3-10 LETTRES)"
+                            maxLength={10}
+                            style={{
+                                textTransform: 'uppercase',
+                                padding: '1rem',
+                                fontSize: '1.5rem',
+                                width: '100%',
+                                maxWidth: '400px',
+                                textAlign: 'center',
+                                background: 'rgba(255, 255, 255, 0.1)',
+                                border: `2px solid ${error ? '#E53E3E' : '#A0AEC0'}`,
+                                color: 'white',
+                                borderRadius: '5px'
+                            }}
+                        />
+                         {error && <p style={{ color: '#FC8181', marginTop: '0.5rem' }}>{error}</p>}
+                        <button type="submit" style={{ ...buttonStyles, marginTop: '1rem', background: '#38B2AC', borderColor: '#38B2AC' }}>
+                            ENREGISTRER
+                        </button>
+                    </form>
+                )}
 
-                <form onSubmit={handleSubmit} style={{ marginTop: '1rem' }}>
-                    <input
-                        type="text"
-                        value={pseudo}
-                        onChange={(e) => setPseudo(e.target.value.toUpperCase().slice(0, 3))}
-                        maxLength={3}
-                        placeholder="AAA"
-                        style={{
-                            width: '100px',
-                            padding: '1rem',
-                            fontSize: '2rem',
-                            textAlign: 'center',
-                            border: '2px solid white',
-                            background: 'rgba(0,0,0,0.5)',
-                            color: 'white',
-                            textTransform: 'uppercase'
-                        }}
-                    />
-                    <button type="submit" style={{ ...buttonStyles, display: 'block', margin: '1rem auto' }}>
-                        Enregistrer
-                    </button>
-                </form>
+                <button onClick={onLeaderboard} style={{...buttonStyles, marginTop: '2rem'}}>
+                    VOIR LE CLASSEMENT
+                </button>
             </div>
         </div>
-    )
+    );
 };
 
 const AnimatedNumber = ({ value }: { value: number }) => {
