@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const { pseudo, score, sessionToken, startTime, endTime } = body;
 
     // Validation des entrées
-    if (!pseudo || typeof pseudo !== 'string' || pseudo.length !== 3 || 
+    if (!pseudo || typeof pseudo !== 'string' || pseudo.length < 1 || pseudo.length > 3 || 
         !score || typeof score !== 'number' ||
         !sessionToken || typeof sessionToken !== 'string' ||
         !startTime || typeof startTime !== 'number' ||

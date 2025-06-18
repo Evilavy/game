@@ -61,6 +61,16 @@ const ZOMBIE_KILL_XP = 5;
 const HEALTH_POTION_DROP_CHANCE = 0.02; // 2% de chance (1 sur 50)
 const HEALTH_POTION_SIZE = 20;
 
+    // --- GRENADE ---
+const GRENADE_COOLDOWN = 15000; // 10s
+const GRENADE_EXPLOSION_DELAY = 3000; // 3s
+const GRENADE_EXPLOSION_DAMAGE = 10;
+const GRENADE_EXPLOSION_RADIUS = 200;
+const GRENADE_ATTRACTION_RADIUS = 400;
+const GRENADE_SPEED = 7; // Vitesse de déplacement de la grenade
+const GRENADE_SIZE = 25;
+const GRENADE_MAX_DISTANCE = 400; // Distance que la grenade parcourt
+
 // --- COMPÉTENCES (PERKS) ---
 // const PERK_TYPE_FIRE_RATE = 'FIRE_RATE';
 // const PERK_TYPE_DAMAGE = 'DAMAGE';
@@ -143,6 +153,26 @@ interface Lightning {
     alpha: number;
 }
 
+interface GrenadeTrailParticle {
+    x: number;
+    y: number;
+    alpha: number;
+    size: number;
+}
+
+interface Grenade {
+    id: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    angle: number;
+    distanceTraveled: number;
+    isActivated: boolean;
+    activationTime: number;
+    trail: GrenadeTrailParticle[];
+}
+
 interface PiercingBlade {
     id: number;
     x: number;
@@ -153,12 +183,6 @@ interface PiercingBlade {
     angle: number;
     hitZombieIds: Set<number>;
 }
-
-/* interface BreathEffect {
-    id: number;
-    angle: number;
-    alpha: number;
-} */
 
 interface HealthPotion {
     id: number;
@@ -279,6 +303,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const bladesRef = useRef<PiercingBlade[]>([]);
     const healthPotionsRef = useRef<HealthPotion[]>([]);
     const bubblesRef = useRef<Bubble[]>([]);
+    const grenadesRef = useRef<Grenade[]>([]);
     const introAnimationRef = useRef({
         startTime: 0,
         duration: 2500, // ms
@@ -310,6 +335,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const yellowZombiesUnlockedRef = useRef<boolean>(false);
     const lastYellowSpawnTimeRef = useRef<number>(0);
     const lastBladeTimeRef = useRef<number>(0);
+    const lastGrenadeTimeRef = useRef<number>(0);
     const bloodParticlesRef = useRef<BloodParticle[]>([]);
     const joystickDirectionRef = useRef({ dx: 0, dy: 0 });
     const isDashingRef = useRef<boolean>(false);
@@ -318,6 +344,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const dashParticlesRef = useRef<DashParticle[]>([]);
     const flashEffectRef = useRef<FlashEffect>({ active: false, startTime: 0, x: 0, y: 0, duration: 150, radius: 120 });
     const aoeEffectsRef = useRef<AoEEffect[]>([]);
+    const pauseStartTimeRef = useRef<number>(0);
 
     // Ajout d'un token de session unique
     const sessionTokenRef = useRef<string>(crypto.randomUUID());
@@ -392,6 +419,39 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const [isGameOver, setIsGameOver] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [isDashOnCooldown, setIsDashOnCooldown] = useState(false);
+
+    useEffect(() => {
+        const now = Date.now();
+        if (isLevelingUp) {
+            pauseStartTimeRef.current = now;
+        } else {
+            if (pauseStartTimeRef.current > 0) {
+                const pauseDuration = now - pauseStartTimeRef.current;
+                
+                // Adjust all relevant timestamps
+                if (dashCooldownEndRef.current > 0) dashCooldownEndRef.current += pauseDuration;
+                if (lastFireTimeRef.current > 0) lastFireTimeRef.current += pauseDuration;
+                if (lastZombieSpawnRef.current > 0) lastZombieSpawnRef.current += pauseDuration;
+                if (lastLightningTimeRef.current > 0) lastLightningTimeRef.current += pauseDuration;
+                if (playerHitCooldownEndRef.current > 0) playerHitCooldownEndRef.current += pauseDuration;
+                if (lastYellowSpawnTimeRef.current > 0) lastYellowSpawnTimeRef.current += pauseDuration;
+                if (lastBladeTimeRef.current > 0) lastBladeTimeRef.current += pauseDuration;
+                if (dashEndTimeRef.current > 0) dashEndTimeRef.current += pauseDuration;
+
+                // Adjust timestamps on active effects
+                if (flashEffectRef.current.active) flashEffectRef.current.startTime += pauseDuration;
+                aoeEffectsRef.current.forEach(effect => effect.startTime += pauseDuration);
+                zombiesRef.current.forEach(zombie => {
+                    if (zombie.spawnTime) zombie.spawnTime += pauseDuration;
+                });
+                grenadesRef.current.forEach(grenade => {
+                    if (grenade.isActivated) grenade.activationTime += pauseDuration;
+                });
+                
+                pauseStartTimeRef.current = 0;
+            }
+        }
+    }, [isLevelingUp]);
 
     // --- State pour le classement en direct ---
     const [leaderboard, setLeaderboard] = useState<Score[]>([]);
@@ -633,7 +693,45 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 });
             }
 
-            setTimeout(() => setIsDashOnCooldown(false), DASH_COOLDOWN);
+            // The timeout is now handled in the update loop
+        }
+    };
+
+    const throwGrenade = () => {
+        const now = Date.now();
+        if (now > lastGrenadeTimeRef.current + GRENADE_COOLDOWN) {
+            lastGrenadeTimeRef.current = now;
+            const direction = lastMovementDirectionRef.current;
+            
+            // Position initiale légèrement devant le joueur
+            const spawnDistance = PLAYER_SIZE;
+            const spawnX = cameraRef.current.x + direction.dx * spawnDistance;
+            const spawnY = cameraRef.current.y + direction.dy * spawnDistance;
+
+            // Calculer le point d'atterrissage (une distance fixe devant le joueur)
+            const throwDistance = 200; // Distance fixe de lancer
+            const targetX = cameraRef.current.x + direction.dx * throwDistance;
+            const targetY = cameraRef.current.y + direction.dy * throwDistance;
+
+            // Calculer la vélocité pour atteindre le point d'atterrissage
+            const dx = targetX - spawnX;
+            const dy = targetY - spawnY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const normalizedDx = dx / distance;
+            const normalizedDy = dy / distance;
+
+            grenadesRef.current.push({
+                id: now,
+                x: spawnX,
+                y: spawnY,
+                vx: normalizedDx * GRENADE_SPEED,
+                vy: normalizedDy * GRENADE_SPEED,
+                angle: 0,
+                distanceTraveled: 0,
+                isActivated: false,
+                activationTime: 0,
+                trail: [], // Initialiser la traînée vide
+            });
         }
     };
 
@@ -712,6 +810,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 e.preventDefault();
                 triggerDash();
             }
+            if (e.key.toLowerCase() === 'g') {
+                e.preventDefault();
+                throwGrenade();
+            }
         };
         const handleKeyUp = (e: KeyboardEvent) => { keysPressedRef.current[e.key.toLowerCase()] = false; };
 
@@ -723,6 +825,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
         const update = (deltaTime: number, now: number) => {
             if (isLevelingUp || isGameOver) return;
+
+            // Handle dash cooldown completion
+            if (isDashOnCooldown && now > dashCooldownEndRef.current) {
+                setIsDashOnCooldown(false);
+            }
+
             const timeScale = deltaTime / (1000 / 60); // Normalize movement to a 60 FPS baseline
 
             if (introAnimationRef.current.isPlaying) {
@@ -795,6 +903,76 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             }
 
             if (!introAnimationRef.current.isPlaying) {
+                // Grenade Logic
+                const grenadesToRemove = new Set<number>();
+                grenadesRef.current.forEach(grenade => {
+                    if (grenade.isActivated) {
+                        // Mettre à jour l'alpha des particules de la traînée
+                        grenade.trail.forEach(particle => {
+                            particle.alpha -= 0.03 * timeScale;
+                        });
+                        // Supprimer les particules invisibles
+                        grenade.trail = grenade.trail.filter(particle => particle.alpha > 0);
+
+                        if (now > grenade.activationTime + GRENADE_EXPLOSION_DELAY) {
+                            // Explode
+                            console.log('💥 Grenade exploding:', {
+                                x: grenade.x,
+                                y: grenade.y,
+                                id: grenade.id
+                            });
+                            grenadesToRemove.add(grenade.id);
+                    
+                            // Add explosion visual effect
+                            aoeEffectsRef.current.push({
+                                id: now,
+                                x: grenade.x,
+                                y: grenade.y,
+                                startTime: now,
+                                duration: 400,
+                                radius: GRENADE_EXPLOSION_RADIUS,
+                            });
+                    
+                            // Deal damage
+                            zombiesRef.current.forEach(zombie => {
+                                const distSq = (grenade.x - zombie.x)**2 + (grenade.y - zombie.y)**2;
+                                if (distSq < GRENADE_EXPLOSION_RADIUS * GRENADE_EXPLOSION_RADIUS) {
+                                    zombie.health -= GRENADE_EXPLOSION_DAMAGE;
+                                    spawnBloodParticles(zombie.x, zombie.y, 10, '#ffa500');
+                                }
+                            });
+                        }
+                    } else {
+                        // Grenade is traveling
+                        if (grenade.distanceTraveled < GRENADE_MAX_DISTANCE) {
+                            const moveX = grenade.vx * timeScale;
+                            const moveY = grenade.vy * timeScale;
+                            grenade.x += moveX;
+                            grenade.y += moveY;
+                            grenade.distanceTraveled += Math.hypot(moveX, moveY);
+                            grenade.angle += 0.1 * timeScale;
+
+                            // Ajouter des particules à la traînée
+                            grenade.trail.push({
+                                x: grenade.x,
+                                y: grenade.y,
+                                alpha: 1,
+                                size: 8 + Math.random() * 4
+                            });
+
+                            // Si la grenade a atteint sa distance maximale, elle s'active
+                            if (grenade.distanceTraveled >= GRENADE_MAX_DISTANCE) {
+                                grenade.isActivated = true;
+                                grenade.activationTime = now;
+                            }
+                        }
+                    }
+                });
+                
+                if (grenadesToRemove.size > 0) {
+                    grenadesRef.current = grenadesRef.current.filter(g => !grenadesToRemove.has(g.id));
+                }
+
                 // Continuous spawn logic - Two-phase system
                 let spawnInterval: number;
                 const playerLevel = playerStateRef.current.level;
@@ -889,11 +1067,36 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                             }
                         });
                         
-                        const target = cameraRef.current;
+                        // --- GRENADE ATTRACTION ---
+                        let target: { x: number; y: number } = cameraRef.current;
+                        let isAttracted = false;
+
+                        let closestGrenade: Grenade | null = null;
+                        let minGrenadeDistSq = GRENADE_ATTRACTION_RADIUS * GRENADE_ATTRACTION_RADIUS;
+
+                        grenadesRef.current.forEach(grenade => {
+                            if (grenade.isActivated) { // Only attract to landed grenades
+                                const distSq = (zombie.x - grenade.x)**2 + (zombie.y - grenade.y)**2;
+                                if (distSq < minGrenadeDistSq) {
+                                    minGrenadeDistSq = distSq;
+                                    closestGrenade = grenade;
+                                }
+                            }
+                        });
+
+                        if (closestGrenade) {
+                            target = closestGrenade;
+                            isAttracted = true;
+                        }
+                        // --- END GRENADE ATTRACTION ---
+                        
                         const dx = target.x - zombie.x;
                         const dy = target.y - zombie.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist > 1) {
+
+                        // Si attiré, le zombie s'arrête près de la grenade, sinon il fonce sur le joueur
+                        const stopDistance = isAttracted ? ZOMBIE_SIZE / 2 : 1;
+                        if (dist > stopDistance) {
                             moveDx = (dx / dist) * speed;
                             moveDy = (dy / dist) * speed;
                         }
@@ -1077,7 +1280,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 // Perk logic
                 // Poison
                 poisonZonesRef.current.forEach(zone => {
-                    zone.timer -= timeScale; 
+                    zone.timer -= deltaTime; 
                     if(zone.timer <= 0) {
                         zone.active = !zone.active;
                         zone.timer = zone.active ? POISON_DURATION : POISON_COOLDOWN;
@@ -1608,7 +1811,80 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillStyle = 'red';
                 context.fillRect(zombie.x - healthBarWidth / 2, zombie.y - ZOMBIE_SIZE / 2 - 10, healthBarWidth * (zombie.health / zombie.maxHealth), 5);
             });
-            
+
+            // Draw Grenades and their trails - MOVED HERE, INSIDE CAMERA TRANSFORM
+            grenadesRef.current.forEach(grenade => {
+                // Debug: Dessiner une ligne de la position du joueur à la grenade
+                context.beginPath();
+                context.strokeStyle = 'yellow';
+                context.lineWidth = 5;
+                context.moveTo(cameraRef.current.x, cameraRef.current.y);
+                context.lineTo(grenade.x, grenade.y);
+                context.stroke();
+
+                // Effet de lueur
+                const glowSize = GRENADE_SIZE * 2;
+                const gradient = context.createRadialGradient(
+                    grenade.x, grenade.y, 0,
+                    grenade.x, grenade.y, glowSize
+                );
+                gradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)');
+                gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.3)');
+                gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                
+                context.fillStyle = gradient;
+                context.beginPath();
+                context.arc(grenade.x, grenade.y, glowSize, 0, Math.PI * 2);
+                context.fill();
+
+                // Traînée
+                grenade.trail.forEach(particle => {
+                    const particleGradient = context.createRadialGradient(
+                        particle.x, particle.y, 0,
+                        particle.x, particle.y, particle.size
+                    );
+                    particleGradient.addColorStop(0, `rgba(255, 50, 50, ${particle.alpha})`);
+                    particleGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                    
+                    context.fillStyle = particleGradient;
+                    context.beginPath();
+                    context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                    context.fill();
+                });
+
+                // Corps de la grenade
+                context.save();
+                context.translate(grenade.x, grenade.y);
+                context.rotate(grenade.angle);
+
+                // Rectangle rouge avec contour blanc
+                context.fillStyle = '#ff0000';
+                context.strokeStyle = '#ffffff';
+                context.lineWidth = 4;
+
+                const grenadeSize = GRENADE_SIZE * 1.5;
+                context.fillRect(-grenadeSize/2, -grenadeSize/2, grenadeSize, grenadeSize);
+                context.strokeRect(-grenadeSize/2, -grenadeSize/2, grenadeSize, grenadeSize);
+
+                // Effet clignotant
+                if (!grenade.isActivated) {
+                    const timeSinceSpawn = now - (lastGrenadeTimeRef.current || now);
+                    if (Math.floor(timeSinceSpawn / 200) % 2 === 0) {
+                        context.fillStyle = '#ffff00';
+                        context.beginPath();
+                        context.arc(0, 0, grenadeSize/3, 0, Math.PI * 2);
+                        context.fill();
+                    }
+                }
+
+                context.restore();
+
+                // Debug text
+                context.fillStyle = 'white';
+                context.font = 'bold 20px Arial';
+                context.fillText(`GRENADE`, grenade.x + 40, grenade.y);
+            });
+
             // Draw orbs (Thème bureau: Boules de papier)
             orbsRef.current.forEach(orb => {
                 context.save();
@@ -1827,10 +2103,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillText('[ESPACE]', skillsFrameX + skillsFrameWidth - 15, skillsFrameY + 25);
                 context.textAlign = 'left';
 
-
                 const cooldownBarY = skillsFrameY + 40;
                 const cooldownBarWidth = skillsFrameWidth - 30;
-                const timeSinceCooldownStart = Math.max(0, now - (dashCooldownEndRef.current - DASH_COOLDOWN));
+                
+                // Freeze the cooldown bar visually during level up
+                const cooldownNow = isLevelingUp && pauseStartTimeRef.current > 0 ? pauseStartTimeRef.current : now;
+                const timeSinceCooldownStart = Math.max(0, cooldownNow - (dashCooldownEndRef.current - DASH_COOLDOWN));
                 const cooldownPercentage = Math.min(timeSinceCooldownStart / DASH_COOLDOWN, 1);
 
                 context.fillStyle = '#333';
@@ -1839,6 +2117,32 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillRect(skillsFrameX + 15, cooldownBarY, cooldownBarWidth * cooldownPercentage, 10);
                 context.strokeStyle = '#666';
                 context.strokeRect(skillsFrameX + 15, cooldownBarY, cooldownBarWidth, 10);
+
+                // Cadre pour la Grenade
+                const grenadeFrameX = skillsFrameX + skillsFrameWidth + 15;
+                drawPixelatedFrame(grenadeFrameX, skillsFrameY, skillsFrameWidth, skillsFrameHeight);
+
+                // Compétence de Grenade
+                context.font = 'bold 16px "Courier New", Courier, monospace';
+                context.fillStyle = 'white';
+                context.fillText('💣 GRENADE [G]', grenadeFrameX + 15, skillsFrameY + 25);
+                context.font = '12px "Courier New", Courier, monospace';
+                context.fillStyle = '#ccc';
+                context.textAlign = 'right';
+                context.fillText('15s', grenadeFrameX + skillsFrameWidth - 15, skillsFrameY + 25);
+                context.textAlign = 'left';
+
+                const grenadeCooldownBarY = skillsFrameY + 40;
+                const grenadeCooldownBarWidth = skillsFrameWidth - 30;
+                
+                const grenadeCooldownPercentage = lastGrenadeTimeRef.current === 0 ? 1 : Math.min((cooldownNow - lastGrenadeTimeRef.current) / GRENADE_COOLDOWN, 1);
+
+                context.fillStyle = '#333';
+                context.fillRect(grenadeFrameX + 15, grenadeCooldownBarY, grenadeCooldownBarWidth, 10);
+                context.fillStyle = grenadeCooldownPercentage >= 1 ? '#39FF14' : 'orange';
+                context.fillRect(grenadeFrameX + 15, grenadeCooldownBarY, grenadeCooldownBarWidth * grenadeCooldownPercentage, 10);
+                context.strokeStyle = '#666';
+                context.strokeRect(grenadeFrameX + 15, grenadeCooldownBarY, grenadeCooldownBarWidth, 10);
             }
             
             // Reset context
@@ -1880,6 +2184,95 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             });
 
             context.restore();
+
+            // Draw Grenades and their trails
+            grenadesRef.current.forEach(grenade => {
+                // Debug: Dessiner un grand cercle rouge à la position de la grenade
+                context.save();
+                context.fillStyle = 'red';
+                context.beginPath();
+                context.arc(grenade.x, grenade.y, 30, 0, Math.PI * 2);
+                context.fill();
+                context.restore();
+
+                // Debug: Dessiner une ligne de la position du joueur à la grenade
+                context.save();
+                context.strokeStyle = 'yellow';
+                context.lineWidth = 5;
+                context.beginPath();
+                context.moveTo(cameraRef.current.x, cameraRef.current.y);
+                context.lineTo(grenade.x, grenade.y);
+                context.stroke();
+                context.restore();
+
+                // Dessiner la traînée
+                context.save();
+                grenade.trail.forEach(particle => {
+                    const gradient = context.createRadialGradient(
+                        particle.x, particle.y, 0,
+                        particle.x, particle.y, particle.size
+                    );
+                    gradient.addColorStop(0, `rgba(255, 50, 50, ${particle.alpha})`);
+                    gradient.addColorStop(1, `rgba(255, 0, 0, 0)`);
+                    
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                    context.fill();
+                });
+                context.restore();
+
+                // Dessiner la grenade avec un effet de lueur
+                context.save();
+                
+                // Effet de lueur
+                const glowSize = GRENADE_SIZE * 1.5;
+                const gradient = context.createRadialGradient(
+                    grenade.x, grenade.y, 0,
+                    grenade.x, grenade.y, glowSize
+                );
+                gradient.addColorStop(0, 'rgba(255, 0, 0, 0.6)');
+                gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                
+                context.fillStyle = gradient;
+                context.beginPath();
+                context.arc(grenade.x, grenade.y, glowSize, 0, Math.PI * 2);
+                context.fill();
+
+                // Corps principal de la grenade
+                context.translate(grenade.x, grenade.y);
+                context.rotate(grenade.angle);
+
+                // Dessiner un rectangle plus grand pour la grenade
+                context.fillStyle = '#ff0000';
+                context.fillRect(-GRENADE_SIZE, -GRENADE_SIZE, GRENADE_SIZE * 2, GRENADE_SIZE * 2);
+                
+                // Contour épais
+                context.strokeStyle = '#ffffff';
+                context.lineWidth = 4;
+                context.strokeRect(-GRENADE_SIZE, -GRENADE_SIZE, GRENADE_SIZE * 2, GRENADE_SIZE * 2);
+
+                // Effet clignotant
+                if (!grenade.isActivated) {
+                    const timeSinceSpawn = now - (lastGrenadeTimeRef.current || now);
+                    if (Math.floor(timeSinceSpawn / 200) % 2 === 0) {
+                        context.fillStyle = '#ffff00';
+                        context.beginPath();
+                        context.arc(0, 0, GRENADE_SIZE / 2, 0, Math.PI * 2);
+                        context.fill();
+                    }
+                }
+
+                context.restore();
+
+                // Debug: Afficher les coordonnées
+                context.save();
+                context.fillStyle = 'white';
+                context.font = '16px Arial';
+                context.fillText(`Grenade: ${Math.round(grenade.x)}, ${Math.round(grenade.y)}`, grenade.x + 40, grenade.y);
+                context.fillText(`Camera: ${Math.round(cameraRef.current.x)}, ${Math.round(cameraRef.current.y)}`, grenade.x + 40, grenade.y + 20);
+                context.restore();
+            });
         };
         
         const gameLoop = () => {

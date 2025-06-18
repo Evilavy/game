@@ -218,19 +218,17 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
 
     const handlePseudoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
-        // Autorise uniquement les lettres, et jusqu'à 10 caractères
-        if (/^[a-zA-Z]*$/.test(value) && value.length <= 10) {
+        // Autorise uniquement les lettres, et jusqu'à 3 caractères
+        if (/^[a-zA-Z]*$/.test(value) && value.length <= 3) {
             setPseudo(value.toUpperCase());
             setError('');
-        } else {
-            setError('Uniquement 10 lettres autorisées (A-Z).');
         }
     };
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        if (pseudo.length < 3 || pseudo.length > 10 || !/^[a-zA-Z]+$/.test(pseudo) || typeof score === 'number') {
-            setError('Le pseudo doit contenir entre 3 et 10 lettres (A-Z).');
+        if (pseudo.length < 1 || pseudo.length > 3 || !/^[a-zA-Z]+$/.test(pseudo) || typeof score === 'number') {
+            setError('Le pseudo doit contenir entre 1 et 3 lettres (A-Z).');
             return;
         }
 
@@ -292,16 +290,15 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
                 )}
                 
                 {typeof score !== 'number' && (
-                    <form onSubmit={handleSubmit} style={{ marginTop: '2rem' }}>
+                    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
                         <input
                             type="text"
                             value={pseudo}
                             onChange={handlePseudoChange}
-                            placeholder="VOTRE PSEUDO (3-10 LETTRES)"
-                            maxLength={10}
+                            placeholder="PSEUDO (3 LETTRES MAX)"
+                            maxLength={3}
                             style={{
-                                textTransform: 'uppercase',
-                                padding: '1rem',
+                                padding: '0.8rem',
                                 fontSize: '1.5rem',
                                 width: '100%',
                                 maxWidth: '400px',
