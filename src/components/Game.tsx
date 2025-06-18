@@ -3,6 +3,11 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { createNoise2D } from 'simplex-noise';
 
+// --- CONSTANTES DE SÉCURITÉ ---
+const MIN_GAME_DURATION = 0; // 10 secondes minimum
+const MAX_GAME_DURATION = 3600000; // 1 heure maximum
+const MAX_SCORE_PER_MINUTE = 2000; // Score maximum possible par minute
+
 // --- CONSTANTES DE JEU ---
 const TILE_SIZE = 50;
 const MAP_WIDTH = 250; // en tuiles
@@ -248,6 +253,39 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const yellowZombiesUnlockedRef = useRef<boolean>(false);
     const lastYellowSpawnTimeRef = useRef<number>(0);
     const lastBladeTimeRef = useRef<number>(0);
+
+    // Ajout d'un token de session unique
+    const sessionTokenRef = useRef<string>(crypto.randomUUID());
+
+    // Déplacer handleGameOver en dehors du useEffect
+    const handleGameOver = useCallback((finalScore: number) => {
+        const gameDuration = Date.now() - gameStartTimeRef.current;
+        
+        // Vérification de la durée minimum
+        if (gameDuration < MIN_GAME_DURATION) {
+            console.error("Game duration too short");
+            onGameOver(0);
+            return;
+        }
+        
+        // Vérification du score maximum possible
+        const maxPossibleScore = Math.ceil((gameDuration / 60000) * MAX_SCORE_PER_MINUTE);
+        if (finalScore > maxPossibleScore) {
+            console.error("Score exceeds maximum possible");
+            onGameOver(0);
+            return;
+        }
+        
+        // Création de la signature
+        const scoreData = {
+            score: Math.floor(finalScore),
+            sessionToken: sessionTokenRef.current,
+            startTime: gameStartTimeRef.current,
+            endTime: Date.now()
+        };
+        
+        onGameOver(scoreData);
+    }, [onGameOver]);
 
     useEffect(() => {
         const chairImg = new Image();
@@ -730,7 +768,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                                 if (playerStateRef.current.health <= 0) {
                                     playerStateRef.current.health = 0;
                                     const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
-                                    onGameOver(Math.floor(finalScore));
+                                    handleGameOver(Math.floor(finalScore));
                                     setIsGameOver(true);
                                 }
                             }
@@ -1449,7 +1487,16 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             window.removeEventListener('keyup', handleKeyUp);
             cancelAnimationFrame(animationFrameId);
         };
-    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, onGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel]);
+    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel]);
+
+    useEffect(() => {
+        if (playerStateRef.current.health <= 0) {
+            playerStateRef.current.health = 0;
+            const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
+            handleGameOver(Math.floor(finalScore));
+            setIsGameOver(true);
+        }
+    }, [handleGameOver, totalXpForLevel]);
 
     return (
         <div style={{ position: 'relative' }}>
