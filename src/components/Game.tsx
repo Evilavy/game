@@ -167,6 +167,16 @@ interface Bubble {
     life: number;
 }
 
+interface BloodParticle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+    color: string;
+    size: number;
+}
+
 // Type pour les scores du classement
 type Score = { pseudo: string, score: number };
 
@@ -263,6 +273,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const yellowZombiesUnlockedRef = useRef<boolean>(false);
     const lastYellowSpawnTimeRef = useRef<number>(0);
     const lastBladeTimeRef = useRef<number>(0);
+    const bloodParticlesRef = useRef<BloodParticle[]>([]);
 
     // Ajout d'un token de session unique
     const sessionTokenRef = useRef<string>(crypto.randomUUID());
@@ -353,6 +364,22 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             }
         };
         fetchLeaderboard();
+    }, []);
+
+    const spawnBloodParticles = useCallback((x: number, y: number, count: number, color: string) => {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 2 + 0.5; // Vitesse réduite (avant: 4 + 1)
+            bloodParticlesRef.current.push({
+                x,
+                y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: Math.random() * 40 + 30, // Durée de vie en frames
+                color,
+                size: Math.random() * 2 + 2,
+            });
+        }
     }, []);
 
     const noise2D = useMemo(() => createNoise2D(), []);
@@ -798,6 +825,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                             if (now > playerHitCooldownEndRef.current && !isBeingKnockedBack) {
                                 playerStateRef.current.health -= ZOMBIE_DAMAGE;
                                 playerHitCooldownEndRef.current = now + PLAYER_HIT_COOLDOWN;
+                                spawnBloodParticles(cameraRef.current.x, cameraRef.current.y, 40, '#ff4d4d'); // Sang du joueur (rouge vif)
+                                
                                 if (playerStateRef.current.health <= 0) {
                                     playerStateRef.current.health = 0;
                                     const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
@@ -835,7 +864,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                 // Orb movement & collision
                 const orbsToRemove = new Set<number>();
-                zombiesRef.current = zombiesRef.current.filter(zombie => {
+                zombiesRef.current.forEach(zombie => {
                     // Despawn des zombies jaunes par durée de vie
                     if (zombie.color === YELLOW_ZOMBIE_COLOR && zombie.spawnTime) {
                         if (now > zombie.spawnTime + YELLOW_ZOMBIE_LIFETIME) {
@@ -868,6 +897,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     if (zombie.health <= 0) {
                         xpRef.current += ZOMBIE_KILL_XP;
                         coinsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
+                        spawnBloodParticles(zombie.x, zombie.y, 25, '#8b0000'); // Sang des zombies (rouge foncé)
                         // Drop de fiole
                         if (Math.random() < HEALTH_POTION_DROP_CHANCE) {
                             healthPotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
@@ -911,20 +941,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     }
 
                     if(zone.active) {
-                        zombiesRef.current = zombiesRef.current.filter(zombie => {
+                        zombiesRef.current.forEach(zombie => {
                             if (Math.hypot(zombie.x - zone.x, zombie.y - zone.y) < POISON_ZONE_RADIUS) {
                                 zombie.health -= POISON_ZONE_DPS * 0.016; // DPS as damage per frame
                             }
-                            if (zombie.health <= 0) {
-                                xpRef.current += ZOMBIE_KILL_XP;
-                                coinsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                                // Drop de fiole
-                                if (Math.random() < HEALTH_POTION_DROP_CHANCE) {
-                                    healthPotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                                }
-                                return false;
-                            }
-                            return true;
                         });
                     }
                 });
@@ -938,21 +958,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         
                         lightningsRef.current.push({ id: now + Math.random(), x: strikeCenter.x, y: strikeCenter.y, alpha: 1.0 });
 
-                        zombiesRef.current = zombiesRef.current.filter(zombie => {
+                        zombiesRef.current.forEach(zombie => {
                             if (Math.hypot(zombie.x - strikeCenter.x, zombie.y - strikeCenter.y) < LIGHTNING_RADIUS) {
-                            zombie.health -= LIGHTNING_DAMAGE;
+                                zombie.health -= LIGHTNING_DAMAGE;
                             }
-                            if (zombie.health <= 0) {
-                            xpRef.current += ZOMBIE_KILL_XP;
-                            coinsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                            // Drop de fiole
-                            if (Math.random() < HEALTH_POTION_DROP_CHANCE) {
-                                healthPotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                            }
-                            return false;
-                        }
-                        return true;
-                    });
+                        });
                     }
                 }
 
@@ -995,18 +1005,21 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 });
                 // Nettoyage des lames qui ont atteint leur portée et des zombies morts
                 bladesRef.current = bladesRef.current.filter(b => b.distanceTraveled < PIERCING_BLADE_RANGE);
-                zombiesRef.current = zombiesRef.current.filter(zombie => {
-                    if(zombie.health <= 0){
+                
+                const newZombies: Zombie[] = [];
+                zombiesRef.current.forEach(zombie => {
+                    if (zombie.health <= 0) {
                         xpRef.current += ZOMBIE_KILL_XP;
                         coinsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                        // Drop de fiole
+                        spawnBloodParticles(zombie.x, zombie.y, 25, '#8b0000'); // Sang des zombies (rouge foncé)
                         if (Math.random() < HEALTH_POTION_DROP_CHANCE) {
                             healthPotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
                         }
-                        return false;
+                    } else {
+                        newZombies.push(zombie);
                     }
-                    return true;
                 });
+                zombiesRef.current = newZombies;
 
                 // Health Potion collection
                 let potionConsumedThisFrame = false;
@@ -1195,6 +1208,15 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 bubble.radius = Math.sin(growthPhase * Math.PI) * 3; // Bubble grows and shrinks, max radius 3
             });
             bubblesRef.current = bubblesRef.current.filter(b => b.life > 0);
+            
+            // Mettre à jour les particules de sang
+            bloodParticlesRef.current.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.1; // Gravité
+                p.life--;
+            });
+            bloodParticlesRef.current = bloodParticlesRef.current.filter(p => p.life > 0);
         };
 
         const draw = () => {
@@ -1274,6 +1296,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     }
                 }
             }
+            
+            // Draw blood particles
+            bloodParticlesRef.current.forEach(p => {
+                context.fillStyle = p.color;
+                context.fillRect(p.x, p.y, p.size, p.size);
+            });
             
             // Draw bubbles in coffee
             bubblesRef.current.forEach(bubble => {
@@ -1477,105 +1505,102 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             context.restore();
             
-            // Draw UI
-            const requiredXp = xpForNextLevel(playerStateRef.current.level);
-            const xpPercentage = (xpRef.current / requiredXp) * 100;
-            context.fillStyle = 'white';
-            context.font = '20px Arial';
-            context.fillText(`Level: ${playerStateRef.current.level}`, 10, 30);
-            context.fillText(`XP: ${Math.floor(xpRef.current)} / ${requiredXp}`, 10, 60);
+            // --- NOUVELLE INTERFACE UTILISATEUR (HUD) ---
 
+            const drawPixelatedFrame = (x: number, y: number, width: number, height: number) => {
+                context.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                context.fillRect(x, y, width, height);
+                context.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                context.lineWidth = 2;
+                context.strokeRect(x, y, width, height);
+                context.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+                context.strokeRect(x+2, y+2, width-4, height-4);
+            };
+
+            // --- CADRE GAUCHE (Niveau, XP, Vies) ---
+            const frameX = 15;
+            const frameY = 15;
+            const frameWidth = 220;
+            const frameHeight = 110;
+            drawPixelatedFrame(frameX, frameY, frameWidth, frameHeight);
+
+            // Niveau
+            context.fillStyle = 'white';
+            context.font = 'bold 20px "Courier New", Courier, monospace';
+            context.shadowColor = 'black';
+            context.shadowBlur = 4;
+            context.textAlign = 'left';
+            context.fillText(`NIVEAU ${playerStateRef.current.level}`, frameX + 15, frameY + 30);
+            
             // Barre d'XP
-            context.fillStyle = '#555';
-            context.fillRect(10, 70, 200, 20);
+            const xpBarY = frameY + 45;
+            const xpBarWidth = frameWidth - 30;
+            const requiredXp = xpForNextLevel(playerStateRef.current.level);
+            const xpPercentage = (xpRef.current / requiredXp);
+            context.fillStyle = '#333';
+            context.fillRect(frameX + 15, xpBarY, xpBarWidth, 15);
             context.fillStyle = 'gold';
-            context.fillRect(10, 70, xpPercentage * 2, 20);
+            context.fillRect(frameX + 15, xpBarY, xpBarWidth * xpPercentage, 15);
+            context.strokeStyle = '#666';
+            context.strokeRect(frameX + 15, xpBarY, xpBarWidth, 15);
 
             // Vies (coeurs)
             const health = playerStateRef.current.health;
             const maxHealth = playerStateRef.current.maxHealth;
-            const heartSize = 20;
-            const heartSpacing = 8;
-            const heartsY = 100;
+            const heartSize = 24;
+            const heartSpacing = 6;
+            const heartsY = frameY + 75;
             
             for (let i = 0; i < maxHealth; i++) {
-                const x = 10 + i * (heartSize + heartSpacing);
-                const y = heartsY;
-
-                context.beginPath();
-                const d = heartSize;
-                context.moveTo(x, y + d / 4);
-                context.quadraticCurveTo(x, y, x + d / 4, y);
-                context.quadraticCurveTo(x + d / 2, y, x + d / 2, y + d / 4);
-                context.quadraticCurveTo(x + d / 2, y, x + d * 3/4, y);
-                context.quadraticCurveTo(x + d, y, x + d, y + d / 4);
-                context.quadraticCurveTo(x + d, y + d / 2, x + d * 3 / 4, y + d * 3/4);
-                context.lineTo(x + d / 2, y + d);
-                context.lineTo(x + d / 4, y + d * 3/4);
-                context.quadraticCurveTo(x, y + d / 2, x, y + d / 4);
-                context.closePath();
-                
-                if (i < health) {
-                    context.fillStyle = '#e74c3c'; // Flat red
-                    context.fill();
-                } else {
-                    context.strokeStyle = 'white';
-                    context.lineWidth = 1;
-                    context.stroke();
-                }
+                const heartX = frameX + 15 + i * (heartSize + heartSpacing);
+                context.fillStyle = (i < health) ? '#e74c3c' : '#444';
+                // Dessin du coeur en pixel art
+                context.fillRect(heartX + heartSize*0.25, heartsY, heartSize*0.5, heartSize*0.25);
+                context.fillRect(heartX, heartsY + heartSize*0.25, heartSize, heartSize*0.5);
+                context.fillRect(heartX + heartSize*0.25, heartsY + heartSize*0.75, heartSize*0.5, heartSize*0.25);
             }
 
-            // --- Interface du classement en direct ---
+            // --- CADRE DROIT (Classement) ---
+            const rightFrameWidth = 240;
+            const rightFrameX = canvas.width - rightFrameWidth - 15;
+            drawPixelatedFrame(rightFrameX, frameY, rightFrameWidth, frameHeight-20);
+            
+            // Rang
             context.textAlign = 'right';
-
-            // Afficher le rang actuel
             if (playerRankRef.current !== null) {
                 context.fillStyle = 'white';
-                context.font = 'bold 22px Arial';
-                context.shadowColor = 'black';
-                context.shadowBlur = 5;
-                context.fillText(`Rang: #${playerRankRef.current}`, canvas.width - 20, 40);
+                context.font = 'bold 22px "Courier New", Courier, monospace';
+                context.fillText(`RANG #${playerRankRef.current}`, canvas.width - 25, frameY + 35);
             }
 
-            // Afficher la progression vers le #1
+            // Barre de progression vers le #1
             if (leaderboard.length > 0) {
                 const topScore = leaderboard[0].score;
                 const currentTotalXp = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
-                const progressPercentage = Math.min((currentTotalXp / topScore) * 100, 100);
-
-                const barWidth = 200;
-                const barX = canvas.width - barWidth - 20;
-                const barY = 60;
+                const progressPercentage = Math.min((currentTotalXp / topScore), 1);
                 
-                context.font = '14px Arial';
-                context.fillStyle = 'white';
-                context.fillText('Progression vers le #1', canvas.width - 20, barY - 5);
+                const progressY = frameY + 60;
+                const progressWidth = rightFrameWidth - 30;
                 
-                // Barre de progression
-                context.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                context.fillRect(barX, barY, barWidth, 20);
+                context.fillStyle = '#333';
+                context.fillRect(rightFrameX + 15, progressY, progressWidth, 15);
                 
-                const gradient = context.createLinearGradient(barX, 0, barX + barWidth, 0);
+                const gradient = context.createLinearGradient(rightFrameX, 0, rightFrameX + progressWidth, 0);
                 gradient.addColorStop(0, '#39FF14');
                 gradient.addColorStop(1, '#00c700');
                 context.fillStyle = gradient;
-                context.fillRect(barX, barY, barWidth * (progressPercentage / 100), 20);
+                context.fillRect(rightFrameX + 15, progressY, progressWidth * progressPercentage, 15);
+                context.strokeStyle = '#666';
+                context.strokeRect(rightFrameX + 15, progressY, progressWidth, 15);
                 
-                // Texte du pourcentage
+                context.font = '12px "Courier New", Courier, monospace';
                 context.fillStyle = 'white';
-                context.font = 'bold 12px Arial';
-                context.textBaseline = 'middle';
-                context.textAlign = 'center';
-                context.shadowColor = 'black';
-                context.shadowBlur = 4;
-                context.fillText(`${Math.floor(progressPercentage)}%`, barX + barWidth / 2, barY + 11);
-                
-                // Réinitialiser le contexte
-                context.shadowBlur = 0;
-                context.textAlign = 'left';
-                context.textBaseline = 'alphabetic';
+                context.fillText(`${Math.floor(progressPercentage*100)}% vers #1`, canvas.width - 25, progressY - 5);
             }
-            // --- Fin de l'interface du classement ---
+            
+            // Reset context
+            context.shadowBlur = 0;
+            context.textAlign = 'left';
         };
         
         const gameLoop = () => {
@@ -1596,7 +1621,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             window.removeEventListener('keyup', handleKeyUp);
             cancelAnimationFrame(animationFrameId);
         };
-    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel, leaderboard, handleGameOver]);
+    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel, leaderboard, handleGameOver, spawnBloodParticles]);
 
     useEffect(() => {
         if (playerStateRef.current.health <= 0) {
