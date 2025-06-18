@@ -10,8 +10,8 @@ const supabase = createClient(
 );
 
 // Constantes de sécurité
-const MAX_SCORE_PER_MINUTE = 2000;
-const MIN_GAME_DURATION = 10000;
+// const MAX_SCORE_PER_MINUTE = 2000; // Vérification désactivée
+const MIN_GAME_DURATION = 15000; // 15 secondes, synchronisé avec le client
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
 
 export async function GET() {
@@ -54,13 +54,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'Invalid game duration' }, { status: 400 });
     }
 
-    // Vérification du score maximum possible
+    /* Vérification du score maximum possible - Désactivée
     const maxPossibleScore = Math.ceil((gameDuration / 60000) * MAX_SCORE_PER_MINUTE);
     console.log(`Score soumis: ${score}, Score max possible calculé: ${maxPossibleScore}`);
     if (score > maxPossibleScore) {
         console.log("Validation échouée: Le score dépasse le maximum possible.");
         return NextResponse.json({ message: 'Score exceeds maximum possible' }, { status: 400 });
     }
+    */
 
     // Appel de la fonction PostgreSQL update_score avec les vérifications
     const rpcParams = {

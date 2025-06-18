@@ -7,7 +7,7 @@ import { Joystick } from 'react-joystick-component';
 // --- CONSTANTES DE SÉCURITÉ ---
 const MIN_GAME_DURATION = 15000; // 15 secondes minimum
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
-const MAX_SCORE_PER_MINUTE = 9000000; // Score maximum possible par minute
+// const MAX_SCORE_PER_MINUTE = 9000000; // Vérification désactivée
 
 // --- CONSTANTES DE JEU ---
 const TILE_SIZE = 50;
@@ -41,7 +41,8 @@ const YELLOW_ZOMBIE_COLOR = '#f1c40f'; // Thème bureau: Post-its
 const SPAWN_BASE_INTERVAL = 1800; // ms au niveau 1
 const SPAWN_RATE_GROWTH = 0.75; // Le délai est multiplié par ce facteur (25% plus rapide par niveau)
 const SPAWN_XP_SCALING_START_LEVEL = 4;
-const SPAWN_XP_SCALING_FACTOR = 1.0015; // Réduit l'intervalle pour chaque point d'XP après le niveau 4
+const SPAWN_WAVE_XP_THRESHOLD = 200; // Un palier de difficulté tous les 200 XP
+const SPAWN_WAVE_DIFFICULTY_MULTIPLIER = 0.90; // Le spawn devient 10% plus rapide à chaque vague
 const ZOMBIE_BLUE_CHANCE = 0.3; // Si pas rouge, 30% de chance d'être bleu
 const ZOMBIE_RED_CHANCE = 0.1; // 10% de chance (absolue) qu'un zombie soit rouge (après déblocage)
 
@@ -360,16 +361,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         if (gameDuration < MIN_GAME_DURATION) {
             console.error(`Durée de partie trop courte (${gameDuration}ms < ${MIN_GAME_DURATION}ms)`);
             alert("La partie est trop courte pour être enregistrée (minimum 15 secondes).");
-            onGameOver(0);
-            return;
-        }
-        
-        // Vérification du score maximum possible
-        const maxPossibleScore = Math.ceil((gameDuration / 60000) * MAX_SCORE_PER_MINUTE);
-        console.log("Score final:", finalScore, "Score maximum possible:", maxPossibleScore);
-        if (finalScore > maxPossibleScore) {
-            console.error(`Score trop élevé (${finalScore} > ${maxPossibleScore})`);
-            alert("Une erreur est survenue lors de la validation du score.");
             onGameOver(0);
             return;
         }
@@ -985,13 +976,15 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     // Phase 1: Difficulté basée sur le niveau
                     spawnInterval = SPAWN_BASE_INTERVAL * Math.pow(SPAWN_RATE_GROWTH, playerLevel - 1);
                 } else {
-                    // Phase 2: Difficulté exponentielle basée sur l'XP
+                    // Phase 2: Difficulté exponentielle par vagues d'XP
                     const intervalAtLvl4Start = SPAWN_BASE_INTERVAL * Math.pow(SPAWN_RATE_GROWTH, SPAWN_XP_SCALING_START_LEVEL - 1);
                     const totalXpAtLvl4Start = totalXpForLevel(SPAWN_XP_SCALING_START_LEVEL);
                     const currentTotalXp = totalXpForLevel(playerLevel) + xpRef.current;
-                    const xpGainedAfterLvl4 = currentTotalXp - totalXpAtLvl4Start;
+                    const xpGainedAfterLvl4 = Math.max(0, currentTotalXp - totalXpAtLvl4Start);
                     
-                    spawnInterval = intervalAtLvl4Start / Math.pow(SPAWN_XP_SCALING_FACTOR, xpGainedAfterLvl4);
+                    const waveCount = Math.floor(xpGainedAfterLvl4 / SPAWN_WAVE_XP_THRESHOLD);
+
+                    spawnInterval = intervalAtLvl4Start * Math.pow(SPAWN_WAVE_DIFFICULTY_MULTIPLIER, waveCount);
                 }
                 
                 if(isIdle) spawnInterval *= 0.5; // Spawn 2x plus vite si inactif
