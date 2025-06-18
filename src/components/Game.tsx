@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { createNoise2D } from 'simplex-noise';
+import { Joystick } from 'react-joystick-component';
 
 // --- CONSTANTES DE SÉCURITÉ ---
 const MIN_GAME_DURATION = 0; // 0 secondes minimum
@@ -274,6 +275,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const lastYellowSpawnTimeRef = useRef<number>(0);
     const lastBladeTimeRef = useRef<number>(0);
     const bloodParticlesRef = useRef<BloodParticle[]>([]);
+    const joystickDirectionRef = useRef({ dx: 0, dy: 0 });
 
     // Ajout d'un token de session unique
     const sessionTokenRef = useRef<string>(crypto.randomUUID());
@@ -336,12 +338,15 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         const playerImg = new Image();
         playerImg.src = '/base-state.png';
         playerImageRef.current = playerImg;
+
+        setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
     }, []);
 
     // États de jeu
     const [isLevelingUp, setIsLevelingUp] = useState(false);
     const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
     const [isGameOver, setIsGameOver] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
 
     // --- State pour le classement en direct ---
     const [leaderboard, setLeaderboard] = useState<Score[]>([]);
@@ -526,6 +531,17 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         setIsLevelingUp(false);
     };
 
+    const handleJoystickMove = (event: any) => {
+        const { x, y } = event;
+        if (x !== null && y !== null) {
+            joystickDirectionRef.current = { dx: x / 50, dy: -y / 50 }; // Normalize and invert Y
+        }
+    };
+
+    const handleJoystickStop = () => {
+        joystickDirectionRef.current = { dx: 0, dy: 0 };
+    };
+
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -631,6 +647,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             if (keysPressedRef.current['s'] || keysPressedRef.current['arrowdown']) dy += 1;
             if (keysPressedRef.current['q'] || keysPressedRef.current['arrowleft']) dx -= 1;
             if (keysPressedRef.current['d'] || keysPressedRef.current['arrowright']) dx += 1;
+
+            if (joystickDirectionRef.current.dx !== 0 || joystickDirectionRef.current.dy !== 0) {
+                dx = joystickDirectionRef.current.dx;
+                dy = joystickDirectionRef.current.dy;
+            }
 
             if (dx !== 0 || dy !== 0) {
                 playerLastMoveTimeRef.current = now;
@@ -1561,16 +1582,18 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             }
 
             // --- CADRE DROIT (Classement) ---
-            const rightFrameWidth = 240;
-            const rightFrameX = canvas.width - rightFrameWidth - 15;
-            drawPixelatedFrame(rightFrameX, frameY, rightFrameWidth, frameHeight-20);
+            const rightFrameWidth = isMobile ? frameWidth : 240;
+            const rightFrameX = isMobile ? frameX : canvas.width - rightFrameWidth - 15;
+            const rightFrameY = isMobile ? frameY + frameHeight + 15 : frameY;
+            drawPixelatedFrame(rightFrameX, rightFrameY, rightFrameWidth, frameHeight - 20);
             
             // Rang
-            context.textAlign = 'right';
+            context.textAlign = isMobile ? 'left' : 'right';
             if (playerRankRef.current !== null) {
                 context.fillStyle = 'white';
                 context.font = 'bold 22px "Courier New", Courier, monospace';
-                context.fillText(`RANG #${playerRankRef.current}`, canvas.width - 25, frameY + 35);
+                const rankTextX = isMobile ? rightFrameX + 15 : canvas.width - 25;
+                context.fillText(`RANG #${playerRankRef.current}`, rankTextX, rightFrameY + 35);
             }
 
             // Barre de progression vers le #1
@@ -1579,13 +1602,13 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 const currentTotalXp = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
                 const progressPercentage = Math.min((currentTotalXp / topScore), 1);
                 
-                const progressY = frameY + 60;
+                const progressY = rightFrameY + 60;
                 const progressWidth = rightFrameWidth - 30;
                 
                 context.fillStyle = '#333';
                 context.fillRect(rightFrameX + 15, progressY, progressWidth, 15);
                 
-                const gradient = context.createLinearGradient(rightFrameX, 0, rightFrameX + progressWidth, 0);
+                const gradient = context.createLinearGradient(rightFrameX + 15, 0, rightFrameX + 15 + progressWidth, 0);
                 gradient.addColorStop(0, '#39FF14');
                 gradient.addColorStop(1, '#00c700');
                 context.fillStyle = gradient;
@@ -1595,7 +1618,9 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 
                 context.font = '12px "Courier New", Courier, monospace';
                 context.fillStyle = 'white';
-                context.fillText(`${Math.floor(progressPercentage*100)}% vers #1`, canvas.width - 25, progressY - 5);
+                context.textAlign = 'right';
+                const progressTextX = isMobile ? rightFrameX + 15 + progressWidth : canvas.width - 25;
+                context.fillText(`${Math.floor(progressPercentage*100)}% vers #1`, progressTextX, progressY - 5);
             }
             
             // Reset context
@@ -1621,7 +1646,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             window.removeEventListener('keyup', handleKeyUp);
             cancelAnimationFrame(animationFrameId);
         };
-    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel, leaderboard, handleGameOver, spawnBloodParticles]);
+    }, [isLevelingUp, isGameOver, map, noise2D, spawnPurpleCircle, handleGameOver, getTileAt, totalXpForLevel, getRandomPerks, xpForNextLevel, leaderboard, handleGameOver, spawnBloodParticles, isMobile]);
 
     useEffect(() => {
         if (playerStateRef.current.health <= 0) {
@@ -1689,6 +1714,17 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     }
                 `}
             </style>
+            {isMobile && (
+                <div style={{ position: 'absolute', bottom: '50px', right: '50px', zIndex: 10 }}>
+                    <Joystick
+                        size={100}
+                        baseColor="rgba(255, 255, 255, 0.2)"
+                        stickColor="rgba(255, 255, 255, 0.5)"
+                        move={handleJoystickMove}
+                        stop={handleJoystickStop}
+                    />
+                </div>
+            )}
         </div>
     );
 };
