@@ -721,6 +721,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
         const update = (deltaTime: number, now: number) => {
             if (isLevelingUp || isGameOver) return;
+            const timeScale = deltaTime / (1000 / 60); // Normalize movement to a 60 FPS baseline
 
             if (introAnimationRef.current.isPlaying) {
                 const elapsedTime = now - introAnimationRef.current.startTime;
@@ -782,8 +783,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     speed *= DASH_SPEED_MULTIPLIER;
                 }
                 
-                const newX = cameraRef.current.x + dx * speed * deltaTime;
-                const newY = cameraRef.current.y + dy * speed * deltaTime;
+                const newX = cameraRef.current.x + dx * speed * timeScale;
+                const newY = cameraRef.current.y + dy * speed * timeScale;
 
                 // Empêcher le joueur de sortir de la carte
                 const halfSize = PLAYER_SIZE / 2;
@@ -906,8 +907,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                         // Friction pour le ralentissement
                         const friction = 0.96; 
-                        zombie.knockbackVx *= Math.pow(friction, deltaTime / 1000);
-                        zombie.knockbackVy *= Math.pow(friction, deltaTime / 1000);
+                        zombie.knockbackVx *= Math.pow(friction, timeScale);
+                        zombie.knockbackVy *= Math.pow(friction, timeScale);
 
                         if (Math.hypot(zombie.knockbackVx, zombie.knockbackVy) < 0.1) {
                             zombie.knockbackVx = 0;
@@ -915,8 +916,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         }
                     }
 
-                    zombie.x += moveDx * deltaTime;
-                    zombie.y += moveDy * deltaTime;
+                    zombie.x += moveDx * timeScale;
+                    zombie.y += moveDy * timeScale;
                 });
 
                 // --- COLLISION RESOLUTION ---
@@ -1060,8 +1061,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         const dy = targetZombie.y - orb.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
                         if (dist > 1) {
-                            orb.x += (dx / dist) * playerStateRef.current.orbSpeed * deltaTime;
-                            orb.y += (dy / dist) * playerStateRef.current.orbSpeed * deltaTime;
+                            orb.x += (dx / dist) * playerStateRef.current.orbSpeed * timeScale;
+                            orb.y += (dy / dist) * playerStateRef.current.orbSpeed * timeScale;
                         }
                     } else { // Target is gone
                         orbsToRemove.add(orb.id);
@@ -1074,7 +1075,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 // Perk logic
                 // Poison
                 poisonZonesRef.current.forEach(zone => {
-                    zone.timer -= deltaTime; 
+                    zone.timer -= timeScale; 
                     if(zone.timer <= 0) {
                         zone.active = !zone.active;
                         zone.timer = zone.active ? POISON_DURATION : POISON_COOLDOWN;
@@ -1111,7 +1112,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 }
 
                 // Update lightning effects
-                lightningsRef.current.forEach(l => l.alpha -= 0.05 * deltaTime);
+                lightningsRef.current.forEach(l => l.alpha -= 0.05 * timeScale);
                 lightningsRef.current = lightningsRef.current.filter(l => l.alpha > 0);
 
                 // Piercing Blade Perk
@@ -1132,10 +1133,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                 // Update Piercing Blades
                 bladesRef.current.forEach(blade => {
-                    blade.x += blade.dx * PIERCING_BLADE_SPEED * deltaTime;
-                    blade.y += blade.dy * PIERCING_BLADE_SPEED * deltaTime;
-                    blade.distanceTraveled += PIERCING_BLADE_SPEED * deltaTime;
-                    blade.angle += 0.2 * deltaTime; // Rotation visuelle
+                    blade.x += blade.dx * PIERCING_BLADE_SPEED * timeScale;
+                    blade.y += blade.dy * PIERCING_BLADE_SPEED * timeScale;
+                    blade.distanceTraveled += PIERCING_BLADE_SPEED * timeScale;
+                    blade.angle += 0.2 * timeScale; // Rotation visuelle
 
                     zombiesRef.current.forEach(zombie => {
                         if (!blade.hitZombieIds.has(zombie.id)) {
@@ -1347,7 +1348,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             }
 
             bubblesRef.current.forEach(bubble => {
-                bubble.life -= deltaTime;
+                bubble.life -= timeScale;
                 const growthPhase = 1 - (bubble.life / bubble.maxLife);
                 bubble.radius = Math.sin(growthPhase * Math.PI) * 3; // Bubble grows and shrinks, max radius 3
             });
@@ -1366,7 +1367,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             dashParticlesRef.current.forEach(p => {
                 p.x += p.vx;
                 p.y += p.vy;
-                p.life -= deltaTime
+                p.life -= timeScale
             });
             dashParticlesRef.current = dashParticlesRef.current.filter(p => p.life > 0);
 
@@ -1473,7 +1474,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                     context.fillStyle = gradient;
                     context.beginPath();
-                    context.arc(flash.x, flash.y, currentRadius, 0, Math.PI * 2);
+                    context.arc(flash.x, flash.y, Math.max(0, currentRadius), 0, Math.PI * 2);
                     context.fill();
                 } else {
                     flash.active = false;
@@ -1509,7 +1510,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.strokeStyle = `rgba(255, 239, 213, ${0.7 * lifeRatio})`; // PapayaWhip color for a creamy bubble look
                 context.lineWidth = 1.5;
                 context.beginPath();
-                context.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
+                context.arc(bubble.x, bubble.y, Math.max(0, bubble.radius), 0, Math.PI * 2);
                 context.stroke();
             });
             
@@ -1842,7 +1843,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 const lifeRatio = p.life / p.maxLife;
                 context.fillStyle = `rgba(255, 255, 255, ${lifeRatio * 0.7})`;
                 context.beginPath();
-                context.arc(p.x, p.y, (1 - lifeRatio) * 15, 0, Math.PI * 2);
+                context.arc(p.x, p.y, Math.max(0, (1 - lifeRatio) * 15), 0, Math.PI * 2);
                 context.fill();
             });
 
