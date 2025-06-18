@@ -5,7 +5,7 @@ import { createNoise2D } from 'simplex-noise';
 import { Joystick } from 'react-joystick-component';
 
 // --- CONSTANTES DE SÉCURITÉ ---
-const MIN_GAME_DURATION = 100000; // 10 secondes minimum
+const MIN_GAME_DURATION = 15000; // 15 secondes minimum
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
 const MAX_SCORE_PER_MINUTE = 9000000; // Score maximum possible par minute
 
@@ -359,7 +359,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         // Vérification de la durée minimum
         if (gameDuration < MIN_GAME_DURATION) {
             console.error(`Durée de partie trop courte (${gameDuration}ms < ${MIN_GAME_DURATION}ms)`);
-            alert("La partie est trop courte pour être enregistrée (minimum 10 secondes).");
+            alert("La partie est trop courte pour être enregistrée (minimum 15 secondes).");
             onGameOver(0);
             return;
         }
