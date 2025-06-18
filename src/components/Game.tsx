@@ -30,7 +30,7 @@ const DASH_AOE_RADIUS = 150;
 
 // --- ZOMBIE ---
 const ZOMBIE_SIZE = 30;
-const ZOMBIE_SPEED = 1.2;
+const ZOMBIE_SPEED = 1.5;
 const ZOMBIE_DAMAGE = 1; // Dégâts réduits à 1
 const ZOMBIE_GREEN_COLOR = '#c0c0c0'; // Thème bureau: Trombones
 const ZOMBIE_BLUE_COLOR = '#555555'; // Thème bureau: Imprimantes
@@ -94,7 +94,7 @@ const PURPLE_ZOMBIE_GAP_ANGLE = Math.PI / 9; // 20 degrés de trou (plus petit)
 const PIERCING_BLADE_COOLDOWN = 3000;
 const PIERCING_BLADE_DAMAGE = 5;
 const PIERCING_BLADE_RANGE = 450;
-const PIERCING_BLADE_SPEED = 10;
+const PIERCING_BLADE_SPEED = 12;
 const PIERCING_BLADE_WIDTH = 10;
 const PIERCING_BLADE_LENGTH = 40;
 
@@ -259,10 +259,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const playerStateRef = useRef<PlayerState>({
         level: 1,
-        speedGround: 3,
-        speedWater: 1.5,
+        speedGround: 4,
+        speedWater: 2,
         fireRate: 1500,
-        orbSpeed: 2.5,
+        orbSpeed: 4,
         damage: 1,
         activePerks: new Set(),
         health: PLAYER_MAX_HEALTH,
