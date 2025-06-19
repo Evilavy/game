@@ -1009,7 +1009,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         angle = Math.random() * 2 * Math.PI;
                     }
 
-                    const spawnDist = 800; // FIX: Use a fixed spawn distance
+                    const spawnDist = 900; // FIX: Use a fixed spawn distance
                     
                     const x = cameraRef.current.x + spawnDist * Math.cos(angle);
                     const y = cameraRef.current.y + spawnDist * Math.sin(angle);
