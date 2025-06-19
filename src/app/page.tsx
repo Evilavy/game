@@ -225,7 +225,14 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
         // Sauvegarder le pseudo dans les cookies
         Cookies.set('lastPseudo', pseudo, { expires: 365 }); // Expire dans 1 an
 
-        const payload = { pseudo, score: score.score, sessionToken: score.sessionToken, startTime: score.startTime, endTime: score.endTime };
+        const payload = { 
+            pseudo, 
+            score: score.score, 
+            sessionToken: score.sessionToken, 
+            startTime: score.startTime, 
+            endTime: score.endTime,
+            signature: score.signature 
+        };
         console.log("Envoi du score au serveur :", payload);
 
         try {

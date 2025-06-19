@@ -7,8 +7,7 @@ import { Joystick } from 'react-joystick-component';
 // --- CONSTANTES DE SÉCURITÉ ---
 const MIN_GAME_DURATION = 15000; // 15 secondes minimum
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
-// const MAX_SCORE_PER_MINUTE = 9000000; // Vérification désactivée
-const ANTI_CHEAT_SECRET_KEY = "c13m3n7-357-un-p7i7-c0quin"; // Secret pour la signature anti-triche
+const ANTI_CHEAT_SECRET_KEY = process.env.NEXT_PUBLIC_ANTI_CHEAT_SECRET_KEY;
 
 // --- CONSTANTES DE JEU ---
 const TILE_SIZE = 50;
@@ -283,7 +282,7 @@ const ALL_PERKS: Perk[] = [
 ];
 
 // --- RAGE MODE ---
-const RAGE_POTION_DROP_CHANCE = 1; // 5% de chance
+const RAGE_POTION_DROP_CHANCE = 0.05; // 5% de chance
 const RAGE_POTION_SIZE = 20;
 const RAGE_DURATION = 8000; // 8s
 const RAGE_FIRE_RATE_MULTIPLIER = 5;
@@ -454,14 +453,28 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         const startTime = gameStartTimeRef.current;
         const endTime = Date.now();
 
-        // Création de la signature anti-triche.
-        // Le serveur doit recalculer cette signature avec la même clé secrète
-        // et la comparer avec celle reçue pour valider le score.
-        const dataString = `${score}|${sessionToken}|${startTime}|${endTime}|${ANTI_CHEAT_SECRET_KEY}`;
+        if (!ANTI_CHEAT_SECRET_KEY) {
+            console.error("Clé secrète anti-triche non définie côté client !");
+            onGameOver(0);
+            return;
+        }
+
+        // Création de la signature anti-triche
+        const dataString = `${score}|${sessionToken}|${startTime}|${endTime}`;
+        
         const encoder = new TextEncoder();
-        const data = encoder.encode(dataString);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const keyData = encoder.encode(ANTI_CHEAT_SECRET_KEY);
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            keyData,
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign']
+        );
+
+        const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(dataString));
+        
+        const hashArray = Array.from(new Uint8Array(signatureBuffer));
         const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
         const scoreData: ScoreData = {
@@ -980,33 +993,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     speed *= DASH_SPEED_MULTIPLIER;
                 }
                 
-                const moveX = dx * speed * timeScale;
-                const moveY = dy * speed * timeScale;
-
-                const tryMove = (axis: 'x' | 'y') => {
-                    const currentX = cameraRef.current.x;
-                    const currentY = cameraRef.current.y;
-                    const nextX = axis === 'x' ? currentX + moveX : currentX;
-                    const nextY = axis === 'y' ? currentY + moveY : currentY;
-
-                    let collision = false;
-                    for (const zombie of zombiesRef.current) {
-                        if (zombie.color === YELLOW_ZOMBIE_COLOR) continue;
-                        const distSq = (nextX - zombie.x)**2 + (nextY - zombie.y)**2;
-                        if (distSq < (PLAYER_SIZE / 2 + ZOMBIE_SIZE / 2)**2) {
-                            collision = true;
-                            break;
-                        }
-                    }
-
-                    if (!collision) {
-                        cameraRef.current.x = nextX;
-                        cameraRef.current.y = nextY;
-                    }
-                };
-                
-                tryMove('x');
-                tryMove('y');
+                cameraRef.current.x += dx * speed * timeScale;
+                cameraRef.current.y += dy * speed * timeScale;
 
                 // Empêcher le joueur de sortir de la carte
                 const halfSize = PLAYER_SIZE / 2;
@@ -1242,7 +1230,9 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 });
 
                 // --- COLLISION RESOLUTION ---
-                for (let i = 0; i < 2; i++) {
+                // This unified loop runs multiple times to let physics "settle",
+                // preventing objects from getting stuck or being pushed too hard (teleporting).
+                for (let i = 0; i < 5; i++) {
                     // Collisions Zombie-Zombie
                     for (let j = 0; j < zombiesRef.current.length; j++) {
                         for (let k = j + 1; k < zombiesRef.current.length; k++) {
@@ -1258,7 +1248,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                             const dzy = z2.y - z1.y;
                             const distSq = dzx * dzx + dzy * dzy;
                             const minDis = ZOMBIE_SIZE + 6; // +2 pour un petit espace entre eux
-                            if (distSq < minDis * minDis && distSq > 0) {
+                            if (distSq > 0 && distSq < minDis * minDis) {
                                 const dist = Math.sqrt(distSq);
                                 const overlap = (minDis - dist) * 0.5;
                                 const pushX = (dzx / dist) * overlap;
@@ -1271,36 +1261,54 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         }
                     }
 
-                    // Collisions Joueur-Zombie
-                    zombiesRef.current.forEach(zombie => {
-                        const pzx = cameraRef.current.x - zombie.x;
-                        const pzy = cameraRef.current.y - zombie.y;
-                        const distSq = pzx * pzx + pzy * pzy;
-                        const minDis = PLAYER_SIZE / 2 + ZOMBIE_SIZE / 2;
-                        if (distSq < minDis * minDis) {
-                            // La logique de poussée a été déplacée vers la gestion des mouvements du joueur.
-                            // Ici, nous ne gérons que les dégâts.
+                    // Collisions Joueur-Zombie (Physics push-out)
+                    for (const zombie of zombiesRef.current) {
+                        if (zombie.color === YELLOW_ZOMBIE_COLOR) continue;
 
-                            // Les dégâts s'appliquent pour tous les zombies, sauf s'ils sont en train de reculer
-                            const isBeingKnockedBack = zombie.knockbackVx || zombie.knockbackVy;
-                            if (now > playerHitCooldownEndRef.current && !isBeingKnockedBack && !isDashingRef.current) {
-                                playerStateRef.current.health -= ZOMBIE_DAMAGE;
-                                playerHitCooldownEndRef.current = now + PLAYER_HIT_COOLDOWN;
-                                spawnBloodParticles(cameraRef.current.x, cameraRef.current.y, 40, '#ff4d4d'); // Sang du joueur (rouge vif)
-                                
-                                if (playerStateRef.current.health <= 0) {
-                                    playerStateRef.current.health = 0;
-                                    const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
-                                    handleGameOver(Math.floor(finalScore));
-                                    setIsGameOver(true);
-                                }
+                        const vecX = cameraRef.current.x - zombie.x;
+                        const vecY = cameraRef.current.y - zombie.y;
+                        const distSq = vecX * vecX + vecY * vecY;
+                        const minDis = PLAYER_SIZE / 2 + ZOMBIE_SIZE / 2;
+
+                        if (distSq > 0 && distSq < minDis * minDis) {
+                            const distance = Math.sqrt(distSq);
+                            const overlap = minDis - distance;
+                            
+                            const pushX = (vecX / distance) * overlap;
+                            const pushY = (vecY / distance) * overlap;
+                            
+                            cameraRef.current.x += pushX;
+                            cameraRef.current.y += pushY;
+                        }
+                    }
+                }
+
+                // After all physics is resolved, check for damage
+                for (const zombie of zombiesRef.current) {
+                    const pzx = cameraRef.current.x - zombie.x;
+                    const pzy = cameraRef.current.y - zombie.y;
+                    const distSq = pzx * pzx + pzy * pzy;
+                    const minDis = PLAYER_SIZE / 2 + ZOMBIE_SIZE / 2;
+                    if (distSq < minDis * minDis) {
+                        const isBeingKnockedBack = zombie.knockbackVx || zombie.knockbackVy;
+                        if (now > playerHitCooldownEndRef.current && !isBeingKnockedBack && !isDashingRef.current) {
+                            playerStateRef.current.health -= ZOMBIE_DAMAGE;
+                            playerHitCooldownEndRef.current = now + PLAYER_HIT_COOLDOWN;
+                            spawnBloodParticles(cameraRef.current.x, cameraRef.current.y, 40, '#ff4d4d');
+                            
+                            if (playerStateRef.current.health <= 0) {
+                                playerStateRef.current.health = 0;
+                                const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
+                                handleGameOver(Math.floor(finalScore));
+                                setIsGameOver(true);
                             }
                         }
-                    });
+                    }
                 }
 
                 // Firing logic
-                if (now > lastFireTimeRef.current + playerStateRef.current.fireRate) {
+                const fireRate = isRageActiveRef.current ? playerStateRef.current.fireRate / RAGE_FIRE_RATE_MULTIPLIER : playerStateRef.current.fireRate;
+                if (now > lastFireTimeRef.current + fireRate) {
                     let closestZombie: Zombie | null = null;
                     let minDistanceSq = PLAYER_FIRE_RANGE * PLAYER_FIRE_RANGE;
 
@@ -1344,7 +1352,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                                     handleZombieDeath(zombie, now);
                                 }
 
-                                const knockbackAngle = Math.atan2(orb.y - zombie.y, orb.x - zombie.x);
+                                const knockbackAngle = Math.atan2(zombie.y - orb.y, zombie.x - orb.x);
                                 zombie.knockbackVx = Math.cos(knockbackAngle) * ORB_KNOCKBACK_STRENGTH;
                                 zombie.knockbackVy = Math.sin(knockbackAngle) * ORB_KNOCKBACK_STRENGTH;
                             }
@@ -1480,12 +1488,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 const newZombies: Zombie[] = [];
                 zombiesRef.current.forEach(zombie => {
                     if (zombie.health <= 0) {
-                        xpRef.current += ZOMBIE_KILL_XP;
-                        coinsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                        spawnBloodParticles(zombie.x, zombie.y, 25, '#8b0000'); // Sang des zombies (rouge foncé)
-                        if (Math.random() < HEALTH_POTION_DROP_CHANCE) {
-                            healthPotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
-                        }
+                        handleZombieDeath(zombie, now);
                     } else {
                         newZombies.push(zombie);
                     }
@@ -1501,6 +1504,19 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     if (distSq < (PLAYER_SIZE / 2 + HEALTH_POTION_SIZE / 2)**2) {
                         playerStateRef.current.health = playerStateRef.current.maxHealth;
                         potionConsumedThisFrame = true;
+                        return false; // Supprime la fiole
+                    }
+                    return true;
+                });
+
+                // Rage Potion collection
+                ragePotionsRef.current = ragePotionsRef.current.filter(potion => {
+                    const distSq = (cameraRef.current.x - potion.x)**2 + (cameraRef.current.y - potion.y)**2;
+                    if (distSq < (PLAYER_SIZE / 2 + RAGE_POTION_SIZE / 2)**2) {
+                        if (!isRageActiveRef.current) {
+                           isRageActiveRef.current = true;
+                        }
+                        rageEndTimeRef.current = now + RAGE_DURATION;
                         return false; // Supprime la fiole
                     }
                     return true;
@@ -1723,11 +1739,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     const tileY = y * TILE_SIZE;
 
                     if (map[y][x].type === 'ground') {
-                        // Carrelage de base plus blanc
-                        context.fillStyle = '#e8e8e8'; // Beaucoup plus clair/blanc
+                        context.fillStyle = '#e8e8e8';
                         context.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
-                        
-                        // Joints de carrelage
                         context.fillStyle = 'rgba(0, 0, 0, 0.1)';
                         for(let i = 0; i < TILE_SIZE; i += 4) {
                             for(let j = 0; j < TILE_SIZE; j += 4) {
@@ -1736,15 +1749,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                                 }
                             }
                         }
-                    } else { // 'water' est devenu 'café'
-                        // Moquette sous la flaque
+                    } else { // 'water' is devenu 'café'
                         context.fillStyle = '#4a5568';
                         context.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
-                        // Flaque de café
                         context.fillStyle = '#693d3d';
                         context.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
-
-                        // Texture de la flaque (reflets)
                         context.fillStyle = 'rgba(255, 255, 255, 0.05)';
                         for(let i = 0; i < 3; i++) {
                             context.beginPath();
@@ -1756,154 +1765,72 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                             );
                             context.fill();
                         }
-
-                        // Bordure plus sombre sur les bords de la flaque
                         const isBoundary = (neighbor: Tile | undefined) => !neighbor || neighbor.type === 'ground';
-                        
-                        context.strokeStyle = '#532e2e'; // Marron très foncé
+                        context.strokeStyle = '#532e2e';
                         context.lineWidth = 2;
-
-                        if (isBoundary(map[y-1]?.[x])) { // Haut
-                            context.beginPath(); context.moveTo(tileX, tileY + 1); context.lineTo(tileX + TILE_SIZE, tileY + 1); context.stroke();
-                        }
-                        if (isBoundary(map[y+1]?.[x])) { // Bas
-                           context.beginPath(); context.moveTo(tileX, tileY + TILE_SIZE - 1); context.lineTo(tileX + TILE_SIZE, tileY + TILE_SIZE - 1); context.stroke();
-                        }
-                        if (isBoundary(map[y]?.[x-1])) { // Gauche
-                            context.beginPath(); context.moveTo(tileX + 1, tileY); context.lineTo(tileX + 1, tileY + TILE_SIZE); context.stroke();
-                        }
-                        if (isBoundary(map[y]?.[x+1])) { // Droite
-                            context.beginPath(); context.moveTo(tileX + TILE_SIZE - 1, tileY); context.lineTo(tileX + TILE_SIZE - 1, tileY + TILE_SIZE); context.stroke();
-                        }
+                        if (isBoundary(map[y-1]?.[x])) { context.beginPath(); context.moveTo(tileX, tileY + 1); context.lineTo(tileX + TILE_SIZE, tileY + 1); context.stroke(); }
+                        if (isBoundary(map[y+1]?.[x])) { context.beginPath(); context.moveTo(tileX, tileY + TILE_SIZE - 1); context.lineTo(tileX + TILE_SIZE, tileY + TILE_SIZE - 1); context.stroke(); }
+                        if (isBoundary(map[y]?.[x-1])) { context.beginPath(); context.moveTo(tileX + 1, tileY); context.lineTo(tileX + 1, tileY + TILE_SIZE); context.stroke(); }
+                        if (isBoundary(map[y]?.[x+1])) { context.beginPath(); context.moveTo(tileX + TILE_SIZE - 1, tileY); context.lineTo(tileX + TILE_SIZE - 1, tileY + TILE_SIZE); context.stroke(); }
                     }
                 }
             }
             
-            context.save();
-            context.globalCompositeOperation = 'lighter';
-
-            // Draw flash
-            const flash = flashEffectRef.current;
-            if (flash.active) {
-                const elapsed = now - flash.startTime;
-                if (elapsed < flash.duration) {
-                    const lifeRatio = elapsed / flash.duration;
-                    const easeOut = 1 - Math.pow(1 - lifeRatio, 4);
-                    
-                    const currentRadius = flash.radius * easeOut;
-                    const currentOpacity = 1 - lifeRatio;
-
-                    const gradient = context.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, currentRadius);
-                    gradient.addColorStop(0, `rgba(173, 255, 47, ${currentOpacity * 0.8})`);
-                    gradient.addColorStop(0.5, `rgba(57, 255, 20, ${currentOpacity * 0.5})`);
-                    gradient.addColorStop(1, `rgba(0, 200, 0, 0)`);
-
-                    context.fillStyle = gradient;
-                    context.beginPath();
-                    context.arc(flash.x, flash.y, Math.max(0, currentRadius), 0, Math.PI * 2);
-                    context.fill();
-                } else {
-                    flash.active = false;
-                }
-            }
-
-            // Draw gas particles
-            dashParticlesRef.current.forEach(p => {
-                const lifeRatio = p.life / p.maxLife;
-                const radius = p.size * lifeRatio;
-
-                const gradient = context.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(0, radius));
-                gradient.addColorStop(0, `rgba(152, 251, 152, ${lifeRatio * 0.7})`);
-                gradient.addColorStop(0.7, `rgba(0, 250, 154, ${lifeRatio * 0.3})`);
-                gradient.addColorStop(1, `rgba(46, 139, 87, 0)`);
-
-                context.fillStyle = gradient;
+            // Draw bloodstains
+            bloodstainsRef.current.forEach(stain => {
+                context.fillStyle = stain.color;
                 context.beginPath();
-                context.arc(p.x, p.y, Math.max(0, radius), 0, Math.PI * 2);
-                context.fill();
-            });
-            context.restore();
-
-            // Draw blood particles
-            bloodParticlesRef.current.forEach(p => {
-                context.fillStyle = p.color;
-                context.fillRect(p.x, p.y, p.size, p.size);
-            });
-            
-            // Draw bubbles in coffee
-            bubblesRef.current.forEach(bubble => {
-                const lifeRatio = bubble.life / bubble.maxLife;
-                context.strokeStyle = `rgba(255, 239, 213, ${0.7 * lifeRatio})`; // PapayaWhip color for a creamy bubble look
-                context.lineWidth = 1.5;
-                context.beginPath();
-                context.arc(bubble.x, bubble.y, Math.max(0, bubble.radius), 0, Math.PI * 2);
-                context.stroke();
-            });
-            
-            // Draw coins (Thème bureau: Punaises)
-            coinsRef.current.forEach(coin => {
-                // Tête de la punaise
-                context.fillStyle = 'gold';
-                context.beginPath();
-                context.arc(coin.x, coin.y, COIN_SIZE / 2, 0, Math.PI * 2);
-                context.fill();
-                // Reflet
-                context.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                context.beginPath();
-                context.arc(coin.x - 2, coin.y - 2, COIN_SIZE / 4, 0, Math.PI * 2);
+                context.arc(stain.x, stain.y, stain.radius, 0, Math.PI * 2);
                 context.fill();
             });
 
             // Draw poison zones (Thème bureau: Flaque de café renversé)
             poisonZonesRef.current.forEach(zone => {
                 if (zone.active) {
-                    // Flaque de café principale
                     const gradient = context.createRadialGradient(zone.x, zone.y, 0, zone.x, zone.y, POISON_ZONE_RADIUS);
-                    gradient.addColorStop(0, "rgba(101, 67, 33, 0.8)"); // Centre plus foncé
-                    gradient.addColorStop(0.4, "rgba(139, 69, 19, 0.6)"); // Milieu marron
-                    gradient.addColorStop(0.8, "rgba(160, 82, 45, 0.4)"); // Bordure plus claire
-                    gradient.addColorStop(1, "rgba(160, 82, 45, 0.1)"); // Bord très transparent
-                    
+                    gradient.addColorStop(0, "rgba(101, 67, 33, 0.8)");
+                    gradient.addColorStop(0.4, "rgba(139, 69, 19, 0.6)");
+                    gradient.addColorStop(0.8, "rgba(160, 82, 45, 0.4)");
+                    gradient.addColorStop(1, "rgba(160, 82, 45, 0.1)");
                     context.fillStyle = gradient;
                     context.beginPath();
                     context.arc(zone.x, zone.y, POISON_ZONE_RADIUS, 0, Math.PI * 2);
                     context.fill();
-                    
-                    // Effet de vapeur/fumée
-                    const time = Date.now() / 1000;
-                    for (let i = 0; i < 8; i++) {
-                        const angle = (i / 8) * Math.PI * 2 + time * 0.5;
-                        const distance = POISON_ZONE_RADIUS * 0.7 + Math.sin(time * 2 + i) * 20;
-                        const vaporX = zone.x + Math.cos(angle) * distance;
-                        const vaporY = zone.y + Math.sin(angle) * distance - Math.sin(time * 3 + i) * 15;
-                        
-                        context.fillStyle = `rgba(101, 67, 33, ${0.3 * (1 + Math.sin(time * 4 + i)) / 2})`;
-                        context.beginPath();
-                        context.arc(vaporX, vaporY, 3 + Math.sin(time * 5 + i) * 2, 0, Math.PI * 2);
-                        context.fill();
-                    }
-                    
-                    // Reflets de surface liquide
-                    for (let i = 0; i < 5; i++) {
-                        const reflectX = zone.x + (Math.random() - 0.5) * POISON_ZONE_RADIUS * 1.5;
-                        const reflectY = zone.y + (Math.random() - 0.5) * POISON_ZONE_RADIUS * 1.5;
-                        const distance = Math.hypot(reflectX - zone.x, reflectY - zone.y);
-                        
-                        if (distance < POISON_ZONE_RADIUS) {
-                            context.fillStyle = `rgba(255, 255, 255, ${0.1 + Math.sin(time * 6 + i) * 0.05})`;
-                            context.beginPath();
-                            context.ellipse(reflectX, reflectY, 4, 2, Math.random() * Math.PI, 0, Math.PI * 2);
-                            context.fill();
-                        }
-                    }
-                    
-                    // Bordure sombre pour définir la flaque
-                    context.strokeStyle = "rgba(52, 46, 42, 0.7)";
-                    context.lineWidth = 2;
-                    context.beginPath();
-                    context.arc(zone.x, zone.y, POISON_ZONE_RADIUS, 0, Math.PI * 2);
-                    context.stroke();
                 }
+            });
+
+            // Draw coins (Thème bureau: Punaises)
+            coinsRef.current.forEach(coin => {
+                context.fillStyle = '#d69e2e';
+                context.beginPath();
+                context.arc(coin.x, coin.y, COIN_SIZE / 2, 0, Math.PI * 2);
+                context.fill();
+            });
+            
+            // Draw Health Potions
+            healthPotionsRef.current.forEach(potion => {
+                context.fillStyle = '#68d391';
+                context.beginPath();
+                context.arc(potion.x, potion.y, HEALTH_POTION_SIZE / 2, 0, 2 * Math.PI);
+                context.fill();
+            });
+            
+            // Draw rage potions
+            ragePotionsRef.current.forEach(potion => {
+                // Pulsating glow effect
+                const auraSize = RAGE_POTION_SIZE / 2 + Math.sin(now / 150) * 3;
+                let gradient = context.createRadialGradient(potion.x, potion.y, 0, potion.x, potion.y, auraSize);
+                gradient.addColorStop(0, 'rgba(255, 50, 50, 0.6)');
+                gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                context.fillStyle = gradient;
+                context.beginPath();
+                context.arc(potion.x, potion.y, auraSize, 0, 2 * Math.PI);
+                context.fill();
+                // Potion body
+                context.fillStyle = '#e53e3e';
+                context.beginPath();
+                context.arc(potion.x, potion.y, RAGE_POTION_SIZE / 2, 0, 2 * Math.PI);
+                context.fill();
             });
 
             // Draw zombies
@@ -1925,7 +1852,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     context.arc(zombie.x, zombie.y, ZOMBIE_SIZE / 2, 0, Math.PI * 2);
                     context.fill();
                 }
-                // Health bar
                 const healthBarWidth = ZOMBIE_SIZE;
                 context.fillStyle = '#333';
                 context.fillRect(zombie.x - healthBarWidth / 2, zombie.y - ZOMBIE_SIZE / 2 - 10, healthBarWidth, 5);
@@ -1933,102 +1859,74 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillRect(zombie.x - healthBarWidth / 2, zombie.y - ZOMBIE_SIZE / 2 - 10, healthBarWidth * (zombie.health / zombie.maxHealth), 5);
             });
 
-            // Draw Grenades and their trails - MOVED HERE, INSIDE CAMERA TRANSFORM
+            // Draw Grenades and their trails
             grenadesRef.current.forEach(grenade => {
-                // Debug: Dessiner une ligne de la position du joueur à la grenade
-                context.beginPath();
-                context.strokeStyle = 'yellow';
-                context.lineWidth = 5;
-                context.moveTo(cameraRef.current.x, cameraRef.current.y);
-                context.lineTo(grenade.x, grenade.y);
-                context.stroke();
-
-                // Effet de lueur
-                const glowSize = GRENADE_SIZE * 2;
-                const gradient = context.createRadialGradient(
-                    grenade.x, grenade.y, 0,
-                    grenade.x, grenade.y, glowSize
-                );
-                gradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)');
-                gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.3)');
-                gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
-                
-                context.fillStyle = gradient;
-                context.beginPath();
-                context.arc(grenade.x, grenade.y, glowSize, 0, Math.PI * 2);
-                context.fill();
-
-                // Traînée
                 grenade.trail.forEach(particle => {
-                    const particleGradient = context.createRadialGradient(
-                        particle.x, particle.y, 0,
-                        particle.x, particle.y, particle.size
-                    );
+                    const particleGradient = context.createRadialGradient( particle.x, particle.y, 0, particle.x, particle.y, particle.size );
                     particleGradient.addColorStop(0, `rgba(255, 50, 50, ${particle.alpha})`);
                     particleGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
-                    
                     context.fillStyle = particleGradient;
                     context.beginPath();
                     context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
                     context.fill();
                 });
-
-                // Corps de la grenade
                 context.save();
                 context.translate(grenade.x, grenade.y);
                 context.rotate(grenade.angle);
-
-                // Rectangle rouge avec contour blanc
                 context.fillStyle = '#ff0000';
                 context.strokeStyle = '#ffffff';
-                context.lineWidth = 4;
-
-                const grenadeSize = GRENADE_SIZE * 1.5;
-                context.fillRect(-grenadeSize/2, -grenadeSize/2, grenadeSize, grenadeSize);
-                context.strokeRect(-grenadeSize/2, -grenadeSize/2, grenadeSize, grenadeSize);
-
-                // Effet clignotant
-                if (!grenade.isActivated) {
-                    const timeSinceSpawn = now - (lastGrenadeTimeRef.current || now);
-                    if (Math.floor(timeSinceSpawn / 200) % 2 === 0) {
-                        context.fillStyle = '#ffff00';
-                        context.beginPath();
-                        context.arc(0, 0, grenadeSize/3, 0, Math.PI * 2);
-                        context.fill();
-                    }
-                }
-
+                context.lineWidth = 2;
+                context.fillRect(-GRENADE_SIZE / 2, -GRENADE_SIZE / 2, GRENADE_SIZE, GRENADE_SIZE);
+                context.strokeRect(-GRENADE_SIZE / 2, -GRENADE_SIZE / 2, GRENADE_SIZE, GRENADE_SIZE);
                 context.restore();
-
-                // Debug text
-                context.fillStyle = 'white';
-                context.font = 'bold 20px Arial';
-                context.fillText(`GRENADE`, grenade.x + 40, grenade.y);
             });
+
+            // Draw Player
+            const isInvincible = now < playerHitCooldownEndRef.current;
+            context.save();
+            if (isInvincible && Math.floor(now / 100) % 2 === 0) {
+                context.globalAlpha = 0.5;
+            }
+            if (playerImageRef.current?.complete) {
+                context.drawImage(playerImageRef.current, cameraRef.current.x - PLAYER_SIZE / 2, cameraRef.current.y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
+            } else {
+                context.fillStyle = isInvincible ? 'rgba(255, 100, 100, 0.9)' : '#f8f8f8';
+                context.beginPath();
+                context.arc(cameraRef.current.x, cameraRef.current.y, PLAYER_SIZE / 2, 0, Math.PI * 2);
+                context.fill();
+            }
+            context.restore();
+            if (isRageActiveRef.current) {
+                const rageProgress = (rageEndTimeRef.current - now) / RAGE_DURATION;
+                const auraRadius = PLAYER_SIZE / 2 + 10 + Math.sin(now / 80) * 4;
+                context.fillStyle = `rgba(255, 0, 0, ${0.1 + Math.max(0, rageProgress) * 0.2})`;
+                context.beginPath();
+                context.arc(cameraRef.current.x, cameraRef.current.y, auraRadius * 1.5, 0, Math.PI * 2);
+                context.fill();
+                context.strokeStyle = `rgba(255, 0, 0, ${0.3 + Math.max(0, rageProgress) * 0.4})`;
+                context.lineWidth = 3;
+                context.beginPath();
+                context.arc(cameraRef.current.x, cameraRef.current.y, auraRadius, 0, Math.PI * 2);
+                context.stroke();
+            }
 
             // Draw orbs (Thème bureau: Boules de papier)
             orbsRef.current.forEach(orb => {
                 context.save();
                 context.translate(orb.x, orb.y);
-
-                // Effet de rotation pour la boule de papier
                 const spinAngle = (orb.id % 1000) / 500 * Math.PI + (Date.now() / 200);
                 context.rotate(spinAngle);
-
                 const ORB_SIZE = 24;
                 const isDamageUpgraded = playerStateRef.current.activePerks.has('DAMAGE');
-
                 if (papierImageRef.current?.complete) {
                     context.drawImage(papierImageRef.current, -ORB_SIZE / 2, -ORB_SIZE / 2, ORB_SIZE, ORB_SIZE);
-                    
                     if (isDamageUpgraded) {
                         context.globalCompositeOperation = 'source-atop';
-                        context.fillStyle = 'rgba(255, 69, 0, 0.4)'; // Superposition OrangeRed
+                        context.fillStyle = 'rgba(255, 69, 0, 0.4)';
                         context.fillRect(-ORB_SIZE / 2, -ORB_SIZE / 2, ORB_SIZE, ORB_SIZE);
-                        context.globalCompositeOperation = 'source-over'; // Réinitialiser
+                        context.globalCompositeOperation = 'source-over';
                     }
                 } else {
-                    // Dessin de secours si l'image n'est pas chargée
                     context.fillStyle = isDamageUpgraded ? '#ff4500' : '#dddddd';
                     context.beginPath();
                     context.arc(0, 0, ORB_SIZE / 2, 0, Math.PI * 2);
@@ -2047,12 +1945,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.stroke();
             });
             
-            // Draw Piercing Blades (Thème bureau: Ramette de papier)
+            // Draw Piercing Blades
             bladesRef.current.forEach(blade => {
                 context.save();
                 context.translate(blade.x, blade.y);
                 context.rotate(blade.angle);
-                context.fillStyle = '#c0c0c0'; // Silver
+                context.fillStyle = '#c0c0c0';
                 context.strokeStyle = '#ffffff';
                 context.lineWidth = 2;
                 context.fillRect(-PIERCING_BLADE_LENGTH / 2, -PIERCING_BLADE_WIDTH / 2, PIERCING_BLADE_LENGTH, PIERCING_BLADE_WIDTH);
@@ -2060,52 +1958,78 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.restore();
             });
             
-            // Draw Health Potions (Thème bureau: Tasse de café)
-            healthPotionsRef.current.forEach(potion => {
-                // Le gobelet
-                context.fillStyle = '#FFFFFF';
+            // Draw bubbles in coffee
+            bubblesRef.current.forEach(bubble => {
+                const lifeRatio = bubble.life / bubble.maxLife;
+                context.strokeStyle = `rgba(255, 239, 213, ${0.7 * lifeRatio})`;
+                context.lineWidth = 1.5;
                 context.beginPath();
-                context.arc(potion.x, potion.y, HEALTH_POTION_SIZE / 2, 0, Math.PI * 2);
-                context.fill();
-                context.strokeStyle = '#dddddd';
-                context.lineWidth = 1;
+                context.arc(bubble.x, bubble.y, Math.max(0, bubble.radius), 0, Math.PI * 2);
                 context.stroke();
+            });
 
-                // Le café dedans
-                context.fillStyle = '#6F4E37'; // Marron café
+            // Draw blood particles
+            bloodParticlesRef.current.forEach(p => {
+                context.fillStyle = p.color;
+                context.fillRect(p.x, p.y, p.size, p.size);
+            });
+
+            // --- VISUAL EFFECTS (ON TOP) ---
+            context.save();
+            context.globalCompositeOperation = 'lighter';
+            // Draw flash
+            const flash = flashEffectRef.current;
+            if (flash.active) {
+                const elapsed = now - flash.startTime;
+                if (elapsed < flash.duration) {
+                    const lifeRatio = elapsed / flash.duration;
+                    const easeOut = 1 - Math.pow(1 - lifeRatio, 4);
+                    const currentRadius = flash.radius * easeOut;
+                    const currentOpacity = 1 - lifeRatio;
+                    const gradient = context.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, currentRadius);
+                    gradient.addColorStop(0, `rgba(173, 255, 47, ${currentOpacity * 0.8})`);
+                    gradient.addColorStop(0.5, `rgba(57, 255, 20, ${currentOpacity * 0.5})`);
+                    gradient.addColorStop(1, `rgba(0, 200, 0, 0)`);
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(flash.x, flash.y, Math.max(0, currentRadius), 0, Math.PI * 2);
+                    context.fill();
+                } else {
+                    flash.active = false;
+                }
+            }
+            // Draw gas particles
+            dashParticlesRef.current.forEach(p => {
+                const lifeRatio = p.life / p.maxLife;
+                const radius = p.size * lifeRatio;
+                const gradient = context.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(0, radius));
+                gradient.addColorStop(0, `rgba(152, 251, 152, ${lifeRatio * 0.7})`);
+                gradient.addColorStop(0.7, `rgba(0, 250, 154, ${lifeRatio * 0.3})`);
+                gradient.addColorStop(1, `rgba(46, 139, 87, 0)`);
+                context.fillStyle = gradient;
                 context.beginPath();
-                context.arc(potion.x, potion.y, HEALTH_POTION_SIZE / 2 * 0.8, 0, Math.PI * 2);
+                context.arc(p.x, p.y, Math.max(0, radius), 0, Math.PI * 2);
                 context.fill();
             });
-            
-            // Draw Player
-            const isInvincible = now < playerHitCooldownEndRef.current;
-            
-            const playerX = cameraRef.current.x;
-            const playerY = cameraRef.current.y;
+            context.restore();
 
-            context.save();
-            
-            if (isInvincible && Math.floor(now / 100) % 2 === 0) {
-                context.globalAlpha = 0.5; // Clignotement pour l'invincibilité
-            }
-
-            if (playerImageRef.current?.complete) {
-                context.drawImage(playerImageRef.current, playerX - PLAYER_SIZE / 2, playerY - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
-            } else {
-                // Dessin de secours si l'image n'est pas chargée
-                context.fillStyle = isInvincible ? 'rgba(255, 100, 100, 0.9)' : '#f8f8f8';
+            // Draw AoE shockwave effect
+            aoeEffectsRef.current.forEach(effect => {
+                const elapsed = now - effect.startTime;
+                const lifeRatio = elapsed / effect.duration;
+                const easeOut = 1 - Math.pow(1 - lifeRatio, 2);
+                const currentRadius = effect.radius * easeOut;
+                const currentOpacity = 1 - lifeRatio;
+                context.strokeStyle = `rgba(127, 255, 0, ${currentOpacity * 0.9})`;
+                context.lineWidth = 4 * (1 - easeOut);
                 context.beginPath();
-                context.arc(playerX, playerY, PLAYER_SIZE / 2, 0, Math.PI * 2);
-                context.fill();
-            }
+                context.arc(effect.x, effect.y, Math.max(0, currentRadius), 0, Math.PI * 2);
+                context.stroke();
+            });
 
-            context.restore();
-
-            context.restore();
+            context.restore(); // END CAMERA TRANSFORM
             
             // --- NOUVELLE INTERFACE UTILISATEUR (HUD) ---
-
             const drawPixelatedFrame = (x: number, y: number, width: number, height: number) => {
                 context.fillStyle = 'rgba(0, 0, 0, 0.5)';
                 context.fillRect(x, y, width, height);
