@@ -980,13 +980,38 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     speed *= DASH_SPEED_MULTIPLIER;
                 }
                 
-                const newX = cameraRef.current.x + dx * speed * timeScale;
-                const newY = cameraRef.current.y + dy * speed * timeScale;
+                const moveX = dx * speed * timeScale;
+                const moveY = dy * speed * timeScale;
+
+                const tryMove = (axis: 'x' | 'y') => {
+                    const currentX = cameraRef.current.x;
+                    const currentY = cameraRef.current.y;
+                    const nextX = axis === 'x' ? currentX + moveX : currentX;
+                    const nextY = axis === 'y' ? currentY + moveY : currentY;
+
+                    let collision = false;
+                    for (const zombie of zombiesRef.current) {
+                        if (zombie.color === YELLOW_ZOMBIE_COLOR) continue;
+                        const distSq = (nextX - zombie.x)**2 + (nextY - zombie.y)**2;
+                        if (distSq < (PLAYER_SIZE / 2 + ZOMBIE_SIZE / 2)**2) {
+                            collision = true;
+                            break;
+                        }
+                    }
+
+                    if (!collision) {
+                        cameraRef.current.x = nextX;
+                        cameraRef.current.y = nextY;
+                    }
+                };
+                
+                tryMove('x');
+                tryMove('y');
 
                 // Empêcher le joueur de sortir de la carte
                 const halfSize = PLAYER_SIZE / 2;
-                cameraRef.current.x = Math.max(halfSize, Math.min(newX, MAP_WIDTH * TILE_SIZE - halfSize));
-                cameraRef.current.y = Math.max(halfSize, Math.min(newY, MAP_HEIGHT * TILE_SIZE - halfSize));
+                cameraRef.current.x = Math.max(halfSize, Math.min(cameraRef.current.x, MAP_WIDTH * TILE_SIZE - halfSize));
+                cameraRef.current.y = Math.max(halfSize, Math.min(cameraRef.current.y, MAP_HEIGHT * TILE_SIZE - halfSize));
             }
 
             if (!introAnimationRef.current.isPlaying) {
@@ -1253,13 +1278,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         const distSq = pzx * pzx + pzy * pzy;
                         const minDis = PLAYER_SIZE / 2 + ZOMBIE_SIZE / 2;
                         if (distSq < minDis * minDis) {
-                            // Le pushback ne s'applique que si le zombie n'est pas jaune
-                            if (zombie.color !== YELLOW_ZOMBIE_COLOR) {
-                                const dist = Math.sqrt(distSq);
-                                const overlap = minDis - dist;
-                                cameraRef.current.x += (pzx / dist) * overlap;
-                                cameraRef.current.y += (pzy / dist) * overlap;
-                            }
+                            // La logique de poussée a été déplacée vers la gestion des mouvements du joueur.
+                            // Ici, nous ne gérons que les dégâts.
 
                             // Les dégâts s'appliquent pour tous les zombies, sauf s'ils sont en train de reculer
                             const isBeingKnockedBack = zombie.knockbackVx || zombie.knockbackVy;
