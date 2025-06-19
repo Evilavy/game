@@ -1009,11 +1009,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         angle = Math.random() * 2 * Math.PI;
                     }
 
-                    const baseSpawnDist = Math.max(canvas.width, canvas.height) / 2;
-                    const effectiveSpawnDist = isIdle ? baseSpawnDist * 0.7 : baseSpawnDist + ZOMBIE_SIZE; // Spawn 30% plus près si inactif
+                    const spawnDist = 800; // FIX: Use a fixed spawn distance
                     
-                    const x = cameraRef.current.x + effectiveSpawnDist * Math.cos(angle);
-                    const y = cameraRef.current.y + effectiveSpawnDist * Math.sin(angle);
+                    const x = cameraRef.current.x + spawnDist * Math.cos(angle);
+                    const y = cameraRef.current.y + spawnDist * Math.sin(angle);
                     
                     let health = 1;
                     let color = ZOMBIE_GREEN_COLOR;
