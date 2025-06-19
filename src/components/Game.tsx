@@ -208,6 +208,8 @@ interface BloodParticle {
     life: number;
     color: string;
     size: number;
+    shape: 'square' | 'pixel' | 'cross';  // Ajout de formes pixelisées
+    rotation: number;  // Pour la rotation des particules
 }
 
 interface DashParticle {
@@ -298,8 +300,48 @@ interface Bloodstain {
     x: number;
     y: number;
     radius: number;
-    color: string;
+    rotation: number;  // Rotation aléatoire de l'image
+    scale: number;    // Échelle aléatoire
+    createdAt: number;
+    fadeStartTime: number;
 }
+
+// Ajouter la constante pour le multiplicateur de vitesse en rage
+const RAGE_SPEED_MULTIPLIER = 1.1; // +10% de vitesse
+
+// Fonction utilitaire pour générer des motifs de sang pixelisés
+const generateBloodPattern = (x: number, y: number, isRage: boolean) => {
+    const pattern: BloodParticle[] = [];
+    // Réduction du nombre de particules en mode rage
+    const count = isRage ? 15 : 20;
+    // Réduction de la taille de base en mode rage
+    const baseSize = isRage ? 3 : 2;
+    
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        // Réduction significative de la vitesse en mode rage
+        const speed = isRage ? (Math.random() * 0.8 + 0.5) : (Math.random() * 2 + 0.5);
+        const shape = isRage ? 
+            (Math.random() > 0.5 ? 'cross' : 'pixel') : 
+            (Math.random() > 0.7 ? 'pixel' : 'square');
+        
+        pattern.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            // Réduction de la durée de vie en mode rage
+            life: Math.random() * 30 + (isRage ? 30 : 30),
+            color: isRage ? 
+                `rgba(${180 + Math.random() * 75}, ${Math.random() * 20}, ${Math.random() * 20}, ${0.6 + Math.random() * 0.2})` :
+                `rgba(${140 + Math.random() * 40}, ${Math.random() * 20}, ${Math.random() * 20}, ${0.6 + Math.random() * 0.2})`,
+            size: baseSize + Math.random() * baseSize,
+            shape,
+            rotation: Math.random() * Math.PI * 2
+        });
+    }
+    return pattern;
+};
 
 const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const handleZombieDeath = useCallback((zombie: Zombie, now: number) => {
@@ -320,12 +362,18 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         }
 
         if (isRageActiveRef.current) {
+            const currentTime = Date.now();
             bloodstainsRef.current.push({
                 id: zombie.id,
                 x: zombie.x,
                 y: zombie.y,
-                radius: ZOMBIE_SIZE + Math.random() * 15,
-                color: `rgba(180, 0, 0, ${0.3 + Math.random() * 0.3})`
+                // Réduction de la taille de base et de la variation aléatoire
+                radius: ZOMBIE_SIZE * 0.8 + Math.random() * 10,
+                rotation: Math.random() * Math.PI * 2,
+                // Réduction de l'échelle en mode rage
+                scale: 0.6 + Math.random() * 0.3,
+                createdAt: currentTime,
+                fadeStartTime: currentTime + 2000
             });
         }
 
@@ -572,19 +620,9 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     }, []);
 
     const spawnBloodParticles = useCallback((x: number, y: number, count: number, color: string) => {
-        for (let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 2 + 0.5; // Vitesse réduite (avant: 4 + 1)
-            bloodParticlesRef.current.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                life: Math.random() * 40 + 30, // Durée de vie en frames
-                color,
-                size: Math.random() * 2 + 2,
-            });
-        }
+        const isRageActive = isRageActiveRef.current;
+        const bloodPattern = generateBloodPattern(x, y, isRageActive);
+        bloodParticlesRef.current.push(...bloodPattern);
     }, []);
 
     const noise2D = useMemo(() => createNoise2D(), []);
@@ -725,6 +763,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
     const triggerDash = () => {
         const now = Date.now();
+        if (isLevelingUp) return; // Ne pas permettre le dash pendant la sélection de perk
         if (now > dashCooldownEndRef.current) {
             const preDashX = cameraRef.current.x;
             const preDashY = cameraRef.current.y;
@@ -790,6 +829,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
     const throwGrenade = () => {
         const now = Date.now();
+        if (isLevelingUp) return; // Ne pas permettre le lancer de grenade pendant la sélection de perk
         if (now > lastGrenadeTimeRef.current + GRENADE_COOLDOWN) {
             lastGrenadeTimeRef.current = now;
             const direction = lastMovementDirectionRef.current;
@@ -988,6 +1028,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
                 const currentTile = getTileAt(cameraRef.current.x, cameraRef.current.y);
                 let speed = currentTile.type === 'water' ? playerStateRef.current.speedWater : playerStateRef.current.speedGround;
+                
+                // Appliquer le bonus de vitesse en mode rage
+                if (isRageActiveRef.current) {
+                    speed *= RAGE_SPEED_MULTIPLIER;
+                }
                 
                 if (isDashingRef.current) {
                     speed *= DASH_SPEED_MULTIPLIER;
@@ -1715,6 +1760,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             // Update AoE effects
             aoeEffectsRef.current = aoeEffectsRef.current.filter(effect => now < effect.startTime + effect.duration);
+
+            // Gestion de la disparition des taches de sang
+            bloodstainsRef.current = bloodstainsRef.current.filter(stain => {
+                const timeSinceFadeStart = now - stain.fadeStartTime;
+                return timeSinceFadeStart < 2000; // Supprime après 2 secondes de fade
+            });
         };
         
         const draw = (now: number) => {
@@ -1778,10 +1829,40 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             
             // Draw bloodstains
             bloodstainsRef.current.forEach(stain => {
-                context.fillStyle = stain.color;
-                context.beginPath();
-                context.arc(stain.x, stain.y, stain.radius, 0, Math.PI * 2);
-                context.fill();
+                const timeSinceFadeStart = now - stain.fadeStartTime;
+                let fadeAlpha = 1;
+                
+                if (timeSinceFadeStart > 0) {
+                    fadeAlpha = Math.max(0, 1 - (timeSinceFadeStart / 2000));
+                }
+
+                if (bloodImageRef.current) {
+                    context.save();
+                    
+                    // Configurer la transparence
+                    context.globalAlpha = fadeAlpha;
+                    
+                    // Positionner au centre de la tache
+                    context.translate(stain.x, stain.y);
+                    
+                    // Appliquer la rotation
+                    context.rotate(stain.rotation);
+                    
+                    // Appliquer l'échelle
+                    const size = stain.radius * 2 * stain.scale;
+                    context.scale(stain.scale, stain.scale);
+                    
+                    // Dessiner l'image
+                    context.drawImage(
+                        bloodImageRef.current,
+                        -size / 2,
+                        -size / 2,
+                        size,
+                        size
+                    );
+                    
+                    context.restore();
+                }
             });
 
             // Draw poison zones (Thème bureau: Flaque de café renversé)
@@ -1809,28 +1890,70 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             
             // Draw Health Potions
             healthPotionsRef.current.forEach(potion => {
-                context.fillStyle = '#68d391';
-                context.beginPath();
-                context.arc(potion.x, potion.y, HEALTH_POTION_SIZE / 2, 0, 2 * Math.PI);
-                context.fill();
+                if (healthPotionImageRef.current) {
+                    context.save();
+                    
+                    // Effet de pulsation
+                    const scale = 1 + Math.sin(now / 100) * 0.1;
+                    const size = HEALTH_POTION_SIZE * scale;
+                    
+                    // Aura verte pulsante
+                    const auraSize = size * 1.5;
+                    const gradient = context.createRadialGradient(potion.x, potion.y, 0, potion.x, potion.y, auraSize);
+                    gradient.addColorStop(0, 'rgba(104, 211, 145, 0.3)');
+                    gradient.addColorStop(1, 'rgba(104, 211, 145, 0)');
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(potion.x, potion.y, auraSize, 0, 2 * Math.PI);
+                    context.fill();
+                    
+                    // Dessiner l'image de la potion
+                    context.translate(potion.x, potion.y);
+                    context.scale(scale, scale);
+                    context.drawImage(
+                        healthPotionImageRef.current,
+                        -HEALTH_POTION_SIZE / 2,
+                        -HEALTH_POTION_SIZE / 2,
+                        HEALTH_POTION_SIZE,
+                        HEALTH_POTION_SIZE
+                    );
+                    
+                    context.restore();
+                }
             });
             
             // Draw rage potions
             ragePotionsRef.current.forEach(potion => {
-                // Pulsating glow effect
-                const auraSize = RAGE_POTION_SIZE / 2 + Math.sin(now / 150) * 3;
-                let gradient = context.createRadialGradient(potion.x, potion.y, 0, potion.x, potion.y, auraSize);
-                gradient.addColorStop(0, 'rgba(255, 50, 50, 0.6)');
-                gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
-                context.fillStyle = gradient;
-                context.beginPath();
-                context.arc(potion.x, potion.y, auraSize, 0, 2 * Math.PI);
-                context.fill();
-                // Potion body
-                context.fillStyle = '#e53e3e';
-                context.beginPath();
-                context.arc(potion.x, potion.y, RAGE_POTION_SIZE / 2, 0, 2 * Math.PI);
-                context.fill();
+                if (ragePotionImageRef.current) {
+                    // Pulsating effect
+                    const scale = 1 + Math.sin(now / 150) * 0.1; // Scale varie entre 0.9 et 1.1
+                    const size = RAGE_POTION_SIZE * scale;
+                    
+                    context.save();
+                    
+                    // Aura rouge pulsante
+                    const auraSize = size * 1.5;
+                    let gradient = context.createRadialGradient(potion.x, potion.y, 0, potion.x, potion.y, auraSize);
+                    gradient.addColorStop(0, 'rgba(255, 50, 50, 0.3)');
+                    gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(potion.x, potion.y, auraSize, 0, 2 * Math.PI);
+                    context.fill();
+                    
+                    // Dessiner l'image de la potion
+                    context.translate(potion.x, potion.y);
+                    context.scale(scale, scale);
+                    context.drawImage(
+                        ragePotionImageRef.current,
+                        -RAGE_POTION_SIZE / 2,
+                        -RAGE_POTION_SIZE / 2,
+                        RAGE_POTION_SIZE,
+                        RAGE_POTION_SIZE
+                    );
+                    
+                    context.restore();
+                }
             });
 
             // Draw zombies
@@ -1861,24 +1984,67 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             // Draw Grenades and their trails
             grenadesRef.current.forEach(grenade => {
+                // Dessiner la traînée
+                context.save();
                 grenade.trail.forEach(particle => {
-                    const particleGradient = context.createRadialGradient( particle.x, particle.y, 0, particle.x, particle.y, particle.size );
-                    particleGradient.addColorStop(0, `rgba(255, 50, 50, ${particle.alpha})`);
-                    particleGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
-                    context.fillStyle = particleGradient;
+                    const gradient = context.createRadialGradient(
+                        particle.x, particle.y, 0,
+                        particle.x, particle.y, particle.size
+                    );
+                    gradient.addColorStop(0, `rgba(255, 50, 50, ${particle.alpha})`);
+                    gradient.addColorStop(1, `rgba(255, 0, 0, 0)`);
+                    
+                    context.fillStyle = gradient;
                     context.beginPath();
                     context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
                     context.fill();
                 });
-                context.save();
-                context.translate(grenade.x, grenade.y);
-                context.rotate(grenade.angle);
-                context.fillStyle = '#ff0000';
-                context.strokeStyle = '#ffffff';
-                context.lineWidth = 2;
-                context.fillRect(-GRENADE_SIZE / 2, -GRENADE_SIZE / 2, GRENADE_SIZE, GRENADE_SIZE);
-                context.strokeRect(-GRENADE_SIZE / 2, -GRENADE_SIZE / 2, GRENADE_SIZE, GRENADE_SIZE);
                 context.restore();
+
+                // Dessiner la grenade avec un effet de lueur
+                if (grenadeImageRef.current) {
+                    context.save();
+                    
+                    // Effet de lueur
+                    const glowSize = GRENADE_SIZE * 1.5;
+                    const gradient = context.createRadialGradient(
+                        grenade.x, grenade.y, 0,
+                        grenade.x, grenade.y, glowSize
+                    );
+                    gradient.addColorStop(0, 'rgba(255, 165, 0, 0.4)');
+                    gradient.addColorStop(1, 'rgba(255, 165, 0, 0)');
+                    
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(grenade.x, grenade.y, glowSize, 0, Math.PI * 2);
+                    context.fill();
+
+                    // Corps principal de la grenade
+                    context.translate(grenade.x, grenade.y);
+                    context.rotate(grenade.angle);
+                    
+                    // Dessiner l'image de la grenade
+                    context.drawImage(
+                        grenadeImageRef.current,
+                        -GRENADE_SIZE,
+                        -GRENADE_SIZE,
+                        GRENADE_SIZE * 2,
+                        GRENADE_SIZE * 2
+                    );
+
+                    // Effet clignotant
+                    if (!grenade.isActivated) {
+                        const timeSinceSpawn = now - (lastGrenadeTimeRef.current || now);
+                        if (Math.floor(timeSinceSpawn / 200) % 2 === 0) {
+                            context.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                            context.beginPath();
+                            context.arc(0, 0, GRENADE_SIZE, 0, Math.PI * 2);
+                            context.fill();
+                        }
+                    }
+
+                    context.restore();
+                }
             });
 
             // Draw Player
@@ -1970,8 +2136,33 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             // Draw blood particles
             bloodParticlesRef.current.forEach(p => {
+                context.save();
+                context.translate(p.x, p.y);
+                context.rotate(p.rotation);
+                
+                const alpha = (p.life / 40);
                 context.fillStyle = p.color;
-                context.fillRect(p.x, p.y, p.size, p.size);
+                
+                switch (p.shape) {
+                    case 'cross':
+                        // Dessine une croix pixelisée
+                        context.fillRect(-p.size, -p.size/3, p.size * 2, p.size/1.5);
+                        context.fillRect(-p.size/3, -p.size, p.size/1.5, p.size * 2);
+                        break;
+                    case 'pixel':
+                        // Dessine un pixel avec un contour plus sombre
+                        context.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                        context.strokeStyle = `rgba(100, 0, 0, ${alpha})`;
+                        context.strokeRect(-p.size/2, -p.size/2, p.size, p.size);
+                        break;
+                    default:
+                        // Carré simple avec ombre
+                        context.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                        context.shadowBlur = 2;
+                        context.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                }
+                
+                context.restore();
             });
 
             // --- VISUAL EFFECTS (ON TOP) ---
@@ -2321,10 +2512,40 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             // Draw bloodstains
             bloodstainsRef.current.forEach(stain => {
-                context.fillStyle = stain.color;
-                context.beginPath();
-                context.arc(stain.x, stain.y, stain.radius, 0, Math.PI * 2);
-                context.fill();
+                const timeSinceFadeStart = now - stain.fadeStartTime;
+                let fadeAlpha = 1;
+                
+                if (timeSinceFadeStart > 0) {
+                    fadeAlpha = Math.max(0, 1 - (timeSinceFadeStart / 2000));
+                }
+
+                if (bloodImageRef.current) {
+                    context.save();
+                    
+                    // Configurer la transparence
+                    context.globalAlpha = fadeAlpha;
+                    
+                    // Positionner au centre de la tache
+                    context.translate(stain.x, stain.y);
+                    
+                    // Appliquer la rotation
+                    context.rotate(stain.rotation);
+                    
+                    // Appliquer l'échelle
+                    const size = stain.radius * 2 * stain.scale;
+                    context.scale(stain.scale, stain.scale);
+                    
+                    // Dessiner l'image
+                    context.drawImage(
+                        bloodImageRef.current,
+                        -size / 2,
+                        -size / 2,
+                        size,
+                        size
+                    );
+                    
+                    context.restore();
+                }
             });
 
             // Draw bubbles
@@ -2357,10 +2578,104 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             // Draw coins
             coinsRef.current.forEach(coin => {
-                context.fillStyle = '#d69e2e'; // Jaune doré
-                context.beginPath();
-                context.arc(coin.x, coin.y, COIN_SIZE / 2, 0, Math.PI * 2);
-                context.fill();
+                if (xpImageRef.current) {
+                    context.save();
+                    
+                    // Effet de rotation et pulsation
+                    const scale = 1 + Math.sin(now / 200) * 0.1;
+                    const rotation = (now / 500) % (Math.PI * 2);
+                    
+                    // Aura dorée pulsante
+                    const auraSize = COIN_SIZE * 1.5;
+                    const gradient = context.createRadialGradient(coin.x, coin.y, 0, coin.x, coin.y, auraSize);
+                    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
+                    gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(coin.x, coin.y, auraSize, 0, Math.PI * 2);
+                    context.fill();
+                    
+                    // Position et rotation de l'image
+                    context.translate(coin.x, coin.y);
+                    context.rotate(rotation);
+                    context.scale(scale, scale);
+                    
+                    // Dessiner l'image de l'XP
+                    context.drawImage(
+                        xpImageRef.current,
+                        -COIN_SIZE / 2,
+                        -COIN_SIZE / 2,
+                        COIN_SIZE,
+                        COIN_SIZE
+                    );
+                    
+                    context.restore();
+                }
+            });
+
+            // Draw Grenades
+            grenadesRef.current.forEach(grenade => {
+                // Dessiner la traînée
+                context.save();
+                grenade.trail.forEach(particle => {
+                    const gradient = context.createRadialGradient(
+                        particle.x, particle.y, 0,
+                        particle.x, particle.y, particle.size
+                    );
+                    gradient.addColorStop(0, `rgba(255, 50, 50, ${particle.alpha})`);
+                    gradient.addColorStop(1, `rgba(255, 0, 0, 0)`);
+                    
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                    context.fill();
+                });
+                context.restore();
+
+                // Dessiner la grenade avec un effet de lueur
+                if (grenadeImageRef.current) {
+                    context.save();
+                    
+                    // Effet de lueur
+                    const glowSize = GRENADE_SIZE * 1.5;
+                    const gradient = context.createRadialGradient(
+                        grenade.x, grenade.y, 0,
+                        grenade.x, grenade.y, glowSize
+                    );
+                    gradient.addColorStop(0, 'rgba(255, 165, 0, 0.4)');
+                    gradient.addColorStop(1, 'rgba(255, 165, 0, 0)');
+                    
+                    context.fillStyle = gradient;
+                    context.beginPath();
+                    context.arc(grenade.x, grenade.y, glowSize, 0, Math.PI * 2);
+                    context.fill();
+
+                    // Corps principal de la grenade
+                    context.translate(grenade.x, grenade.y);
+                    context.rotate(grenade.angle);
+                    
+                    // Dessiner l'image de la grenade
+                    context.drawImage(
+                        grenadeImageRef.current,
+                        -GRENADE_SIZE,
+                        -GRENADE_SIZE,
+                        GRENADE_SIZE * 2,
+                        GRENADE_SIZE * 2
+                    );
+
+                    // Effet clignotant
+                    if (!grenade.isActivated) {
+                        const timeSinceSpawn = now - (lastGrenadeTimeRef.current || now);
+                        if (Math.floor(timeSinceSpawn / 200) % 2 === 0) {
+                            context.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                            context.beginPath();
+                            context.arc(0, 0, GRENADE_SIZE, 0, Math.PI * 2);
+                            context.fill();
+                        }
+                    }
+
+                    context.restore();
+                }
             });
 
             // Draw player
@@ -2424,6 +2739,56 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             setIsGameOver(true);
         }
     }, [handleGameOver, totalXpForLevel]);
+
+    // Ajouter la référence à l'image de sang
+    const bloodImageRef = useRef<HTMLImageElement | null>(null);
+
+    // Charger l'image de sang
+    useEffect(() => {
+        const bloodImage = new Image();
+        bloodImage.src = '/sang.png';
+        bloodImage.onload = () => {
+            bloodImageRef.current = bloodImage;
+        };
+    }, []);
+
+    // Ajouter la référence à l'image de la potion de rage
+    const ragePotionImageRef = useRef<HTMLImageElement | null>(null);
+
+    // Charger l'image de la potion de rage
+    useEffect(() => {
+        const ragePotionImage = new Image();
+        ragePotionImage.src = '/potion-rage.png';
+        ragePotionImage.onload = () => {
+            ragePotionImageRef.current = ragePotionImage;
+        };
+    }, []);
+
+    // Ajouter les références aux images
+    const healthPotionImageRef = useRef<HTMLImageElement | null>(null);
+    const grenadeImageRef = useRef<HTMLImageElement | null>(null);
+    const xpImageRef = useRef<HTMLImageElement | null>(null);
+
+    // Charger les images
+    useEffect(() => {
+        const healthPotionImage = new Image();
+        healthPotionImage.src = '/potion-vie.png';
+        healthPotionImage.onload = () => {
+            healthPotionImageRef.current = healthPotionImage;
+        };
+
+        const grenadeImage = new Image();
+        grenadeImage.src = '/grenade.png';
+        grenadeImage.onload = () => {
+            grenadeImageRef.current = grenadeImage;
+        };
+
+        const xpImage = new Image();
+        xpImage.src = '/XP.png';
+        xpImage.onload = () => {
+            xpImageRef.current = xpImage;
+        };
+    }, []);
 
     return (
         <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
