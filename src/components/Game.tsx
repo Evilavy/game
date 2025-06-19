@@ -8,6 +8,7 @@ import { Joystick } from 'react-joystick-component';
 const MIN_GAME_DURATION = 15000; // 15 secondes minimum
 const MAX_GAME_DURATION = 3600000; // 1 heure maximum
 // const MAX_SCORE_PER_MINUTE = 9000000; // Vérification désactivée
+const ANTI_CHEAT_SECRET_KEY = "c13m3n7-357-un-p7i7-c0quin"; // Secret pour la signature anti-triche
 
 // --- CONSTANTES DE JEU ---
 const TILE_SIZE = 50;
@@ -247,6 +248,7 @@ export interface ScoreData {
     sessionToken: string;
     startTime: number;
     endTime: number;
+    signature: string;
 }
 
 type PerkID = 'FIRE_RATE' | 'DAMAGE' | 'POISON' | 'LIGHTNING' | 'PIERCING_BLADE';
@@ -280,41 +282,84 @@ const ALL_PERKS: Perk[] = [
     { id: 'PIERCING_BLADE', name: 'Ramette Tranchante', description: 'Toutes les 3s, lance une ramette de papier qui transperce les ennemis.' },
 ];
 
-const Game: React.FC<GameProps> = ({ onGameOver }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const playerStateRef = useRef<PlayerState>({
-        level: 1,
-        speedGround: 4,
-        speedWater: 2,
-        fireRate: 1500,
-        orbSpeed: 4,
-        damage: 1,
-        activePerks: new Set(),
-        health: PLAYER_MAX_HEALTH,
-        maxHealth: PLAYER_MAX_HEALTH,
-    });
+// --- RAGE MODE ---
+const RAGE_POTION_DROP_CHANCE = 1; // 5% de chance
+const RAGE_POTION_SIZE = 20;
+const RAGE_DURATION = 8000; // 8s
+const RAGE_FIRE_RATE_MULTIPLIER = 5;
 
+interface RagePotion {
+    id: number;
+    x: number;
+    y: number;
+}
+
+interface Bloodstain {
+    id: number;
+    x: number;
+    y: number;
+    radius: number;
+    color: string;
+}
+
+const Game: React.FC<GameProps> = ({ onGameOver }) => {
+    const handleZombieDeath = useCallback((zombie: Zombie, now: number) => {
+        if (deadZombiesForFrameRef.current.has(zombie.id)) return;
+
+        deadZombiesForFrameRef.current.add(zombie.id);
+        xpRef.current += ZOMBIE_KILL_XP;
+        newCoinsForFrameRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
+
+        // Drop rage potion
+        if (Math.random() < RAGE_POTION_DROP_CHANCE) {
+            ragePotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
+        }
+
+        // Drop health potion
+        if (playerStateRef.current.health < playerStateRef.current.maxHealth && Math.random() < HEALTH_POTION_DROP_CHANCE) {
+            healthPotionsRef.current.push({ id: now + Math.random(), x: zombie.x, y: zombie.y });
+        }
+
+        if (isRageActiveRef.current) {
+            bloodstainsRef.current.push({
+                id: zombie.id,
+                x: zombie.x,
+                y: zombie.y,
+                radius: ZOMBIE_SIZE + Math.random() * 15,
+                color: `rgba(180, 0, 0, ${0.3 + Math.random() * 0.3})`
+            });
+        }
+
+        spawnBloodParticles(zombie.x, zombie.y, 20, zombie.color === ZOMBIE_GREEN_COLOR ? '#c0c0c0' : '#555555');
+    }, []);
+
+    // --- REFS ---
+    // Canvas & Core Refs
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const cameraRef = useRef({ x: MAP_WIDTH * TILE_SIZE / 2, y: MAP_HEIGHT * TILE_SIZE / 2 });
-    const keysPressedRef = useRef<Record<string, boolean>>({});
+    
+    // Entity & Item Refs
     const zombiesRef = useRef<Zombie[]>([]);
     const orbsRef = useRef<Orb[]>([]);
     const coinsRef = useRef<Coin[]>([]);
-    const poisonZonesRef = useRef<PoisonZone[]>([]);
-    const lightningsRef = useRef<Lightning[]>([]);
-    const bladesRef = useRef<PiercingBlade[]>([]);
+    const ragePotionsRef = useRef<RagePotion[]>([]);
+    const bloodstainsRef = useRef<Bloodstain[]>([]);
     const healthPotionsRef = useRef<HealthPotion[]>([]);
     const bubblesRef = useRef<Bubble[]>([]);
     const grenadesRef = useRef<Grenade[]>([]);
-    const introAnimationRef = useRef({
-        startTime: 0,
-        duration: 2500, // ms
-        startZoom: 4,
-        endZoom: 1,
-        currentZoom: 4,
-        isPlaying: true,
-    });
-    const isInitializedRef = useRef(false);
-    const purpleCircleTriggeredForLevelRef = useRef<Set<number>>(new Set());
+    
+    // Particle & Effect Refs
+    const bloodParticlesRef = useRef<BloodParticle[]>([]);
+    const dashParticlesRef = useRef<DashParticle[]>([]);
+    const flashEffectRef = useRef<FlashEffect>({ active: false, startTime: 0, x: 0, y: 0, duration: 150, radius: 120 });
+    const aoeEffectsRef = useRef<AoEEffect[]>([]);
+    const poisonZonesRef = useRef<PoisonZone[]>([]);
+    const lightningsRef = useRef<Lightning[]>([]);
+    const bladesRef = useRef<PiercingBlade[]>([]);
+    const deadZombiesForFrameRef = useRef(new Set<number>());
+    const newCoinsForFrameRef = useRef<Coin[]>([]);
+
+    // Image Refs
     const chairImageRef = useRef<HTMLImageElement | null>(null);
     const postitImageRef = useRef<HTMLImageElement | null>(null);
     const bureauImageRef = useRef<HTMLImageElement | null>(null);
@@ -322,38 +367,71 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const trombonneImageRef = useRef<HTMLImageElement | null>(null);
     const papierImageRef = useRef<HTMLImageElement | null>(null);
     const playerImageRef = useRef<HTMLImageElement | null>(null);
-    const xpRef = useRef<number>(0);
-    const lastFireTimeRef = useRef<number>(0);
-    const lastZombieSpawnRef = useRef<number>(0);
-    const lastLightningTimeRef = useRef<number>(0);
-    const playerHitCooldownEndRef = useRef<number>(0);
-    const gameStartTimeRef = useRef<number>(0);
-    const lastUpdateTimeRef = useRef<number>(0);
-    const zombieSpeedBonusRef = useRef<number>(0);
-    const playerLastMoveTimeRef = useRef<number>(0);
-    const lastMovementDirectionRef = useRef({ dx: 0, dy: -1 }); // Default: up
-    const redZombiesUnlockedRef = useRef<boolean>(false);
-    const yellowZombiesUnlockedRef = useRef<boolean>(false);
-    const lastYellowSpawnTimeRef = useRef<number>(0);
-    const lastBladeTimeRef = useRef<number>(0);
-    const lastGrenadeTimeRef = useRef<number>(0);
-    const bloodParticlesRef = useRef<BloodParticle[]>([]);
-    const joystickDirectionRef = useRef({ dx: 0, dy: 0 });
-    const isDashingRef = useRef<boolean>(false);
-    const dashEndTimeRef = useRef<number>(0);
-    const dashCooldownEndRef = useRef<number>(0);
-    const dashParticlesRef = useRef<DashParticle[]>([]);
-    const flashEffectRef = useRef<FlashEffect>({ active: false, startTime: 0, x: 0, y: 0, duration: 150, radius: 120 });
-    const aoeEffectsRef = useRef<AoEEffect[]>([]);
+
+    // Player State & Abilities Refs
+    const playerStateRef = useRef<PlayerState>({
+        level: 1, speedGround: 4, speedWater: 2, fireRate: 1500, orbSpeed: 4,
+        damage: 1, activePerks: new Set(), health: PLAYER_MAX_HEALTH, maxHealth: PLAYER_MAX_HEALTH,
+    });
+    const xpRef = useRef(0);
+    const keysPressedRef = useRef<Record<string, boolean>>({});
+    const lastMovementDirectionRef = useRef({ dx: 0, dy: -1 });
+    const isDashingRef = useRef(false);
+    const dashEndTimeRef = useRef(0);
+    const dashCooldownEndRef = useRef(0);
+    const isRageActiveRef = useRef(false);
+    const rageEndTimeRef = useRef(0);
+
+    // Game State Refs
+    const gameStartTimeRef = useRef<number | null>(null);
+    const lastUpdateTimeRef = useRef(0);
+    const isInitializedRef = useRef(false);
+    const playerHitRef = useRef(false);
+    const playerHitCooldownEndRef = useRef(0);
+    const introAnimationRef = useRef({ isPlaying: true, startTime: 0, duration: 2000, startZoom: 4, endZoom: 1, currentZoom: 4 });
+    const playerRankRef = useRef<number | null>(null);
+    const zombieSpeedBonusRef = useRef(0);
+    const playerLastMoveTimeRef = useRef(0);
+    const redZombiesUnlockedRef = useRef(false);
+    const yellowZombiesUnlockedRef = useRef(false);
+    const purpleCircleTriggeredForLevelRef = useRef(new Set<number>());
+    const sessionTokenRef = useRef<string>(crypto.randomUUID());
+    const displayedScoreRef = useRef<number>(0);
     const pauseStartTimeRef = useRef<number>(0);
 
-    // Ajout d'un token de session unique
-    const sessionTokenRef = useRef<string>(crypto.randomUUID());
+    // Timers & Cooldowns
+    const lastFireTimeRef = useRef(0);
+    const lastZombieSpawnRef = useRef(0);
+    const lastLightningTimeRef = useRef(0);
+    const lastPoisonTimeRef = useRef(0);
+    const lastYellowSpawnTimeRef = useRef(0);
+    const lastBladeTimeRef = useRef(0);
+    const lastGrenadeTimeRef = useRef(0);
+    
+    // Input Refs
+    const joystickDirectionRef = useRef({ dx: 0, dy: 0 });
 
-    const displayedScoreRef = useRef<number>(0);
+    // --- STATE ---
+    const [isLevelingUp, setIsLevelingUp] = useState(false);
+    const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
+    const [isGameOver, setIsGameOver] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+    const [isDashOnCooldown, setIsDashOnCooldown] = useState(false);
+    const [leaderboard, setLeaderboard] = useState<Score[]>([]);
+    const [rankUpAnimation, setRankUpAnimation] = useState({ show: false, rank: 0, text: '' });
+    
+    // --- DERIVED STATE & CONSTANTS ---
+    const totalXpForLevel = useCallback((level: number) => {
+        let total = 0;
+        for (let i = 1; i < level; i++) {
+            total += xpForNextLevel(i);
+        }
+        return total;
+    }, []);
 
     // Déplacer handleGameOver en dehors du useEffect
-    const handleGameOver = useCallback((finalScore: number) => {
+    const handleGameOver = useCallback(async (finalScore: number) => {
+        if (!gameStartTimeRef.current) return;
         const gameDuration = Date.now() - gameStartTimeRef.current;
         console.log("Durée de la partie:", gameDuration, "ms");
         
@@ -365,12 +443,33 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             return;
         }
         
-        // Création de la signature
+        if (!gameStartTimeRef.current) {
+            console.error("Heure de début de partie non définie !");
+            onGameOver(0);
+            return;
+        }
+        
+        const score = Math.floor(finalScore);
+        const sessionToken = sessionTokenRef.current;
+        const startTime = gameStartTimeRef.current;
+        const endTime = Date.now();
+
+        // Création de la signature anti-triche.
+        // Le serveur doit recalculer cette signature avec la même clé secrète
+        // et la comparer avec celle reçue pour valider le score.
+        const dataString = `${score}|${sessionToken}|${startTime}|${endTime}|${ANTI_CHEAT_SECRET_KEY}`;
+        const encoder = new TextEncoder();
+        const data = encoder.encode(dataString);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
         const scoreData: ScoreData = {
-            score: Math.floor(finalScore),
-            sessionToken: sessionTokenRef.current,
-            startTime: gameStartTimeRef.current,
-            endTime: Date.now()
+            score,
+            sessionToken,
+            startTime,
+            endTime,
+            signature,
         };
         
         onGameOver(scoreData);
@@ -408,13 +507,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
     }, []);
 
-    // États de jeu
-    const [isLevelingUp, setIsLevelingUp] = useState(false);
-    const [availablePerks, setAvailablePerks] = useState<Perk[]>([]);
-    const [isGameOver, setIsGameOver] = useState(false);
-    const [isMobile, setIsMobile] = useState(false);
-    const [isDashOnCooldown, setIsDashOnCooldown] = useState(false);
-
     useEffect(() => {
         const now = Date.now();
         if (isLevelingUp) {
@@ -447,11 +539,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             }
         }
     }, [isLevelingUp]);
-
-    // --- State pour le classement en direct ---
-    const [leaderboard, setLeaderboard] = useState<Score[]>([]);
-    const playerRankRef = useRef<number | null>(null);
-    const [rankUpAnimation, setRankUpAnimation] = useState({ show: false, rank: 0, text: '' });
 
     // Récupérer le classement au démarrage
     useEffect(() => {
@@ -559,14 +646,6 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
     const xpForNextLevel = useCallback((level: number) => Math.floor(XP_BASE_REQ * Math.pow(XP_GROWTH_FACTOR, level - 1)), []);
 
-    const totalXpForLevel = useCallback((level: number) => {
-        let total = 0;
-        for (let i = 1; i < level; i++) {
-            total += xpForNextLevel(i);
-        }
-        return total;
-    }, [xpForNextLevel]);
-
     const getRandomPerks = useCallback((): Perk[] => {
         const unselectedPerks = ALL_PERKS.filter(p => !playerStateRef.current.activePerks.has(p.id));
         const shuffled = unselectedPerks.sort(() => 0.5 - Math.random());
@@ -642,6 +721,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 const distSq = (preDashX - zombie.x)**2 + (preDashY - zombie.y)**2;
                 if (distSq < DASH_AOE_RADIUS * DASH_AOE_RADIUS) {
                     zombie.health -= DASH_AOE_DAMAGE;
+                    if (zombie.health <= 0) {
+                        handleZombieDeath(zombie, now);
+                    }
+                    spawnBloodParticles(zombie.x, zombie.y, 10, '#ffffff');
                 }
             });
 
@@ -821,9 +904,18 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         const update = (deltaTime: number, now: number) => {
             if (isLevelingUp || isGameOver) return;
 
+            // At the start of each frame, clear the lists of entities to be processed
+            deadZombiesForFrameRef.current.clear();
+            newCoinsForFrameRef.current = [];
+
             // Handle dash cooldown completion
             if (isDashOnCooldown && now > dashCooldownEndRef.current) {
                 setIsDashOnCooldown(false);
+            }
+
+            // Handle rage mode completion
+            if (isRageActiveRef.current && now > rageEndTimeRef.current) {
+                isRageActiveRef.current = false;
             }
 
             const timeScale = deltaTime / (1000 / 60); // Normalize movement to a 60 FPS baseline
@@ -845,7 +937,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
             // --- Système d'agressivité ---
             // 1. Les zombies deviennent plus rapides avec le temps
-            const elapsedTime = now - gameStartTimeRef.current;
+            const elapsedTime = now - (gameStartTimeRef.current || now);
             const newSpeedBonus = Math.floor(elapsedTime / 15000) * 0.05; // +0.05 vitesse toutes les 15s
             if (newSpeedBonus > zombieSpeedBonusRef.current) {
                 zombieSpeedBonusRef.current = newSpeedBonus;
@@ -933,6 +1025,9 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                                 const distSq = (grenade.x - zombie.x)**2 + (grenade.y - zombie.y)**2;
                                 if (distSq < GRENADE_EXPLOSION_RADIUS * GRENADE_EXPLOSION_RADIUS) {
                                     zombie.health -= GRENADE_EXPLOSION_DAMAGE;
+                                    if (zombie.health <= 0) {
+                                        handleZombieDeath(zombie, now);
+                                    }
                                     spawnBloodParticles(zombie.x, zombie.y, 10, '#ffa500');
                                 }
                             });
@@ -1009,7 +1104,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         angle = Math.random() * 2 * Math.PI;
                     }
 
-                    const spawnDist = 900; // FIX: Use a fixed spawn distance
+                    const spawnDist = 800; // FIX: Use a fixed spawn distance
                     
                     const x = cameraRef.current.x + spawnDist * Math.cos(angle);
                     const y = cameraRef.current.y + spawnDist * Math.sin(angle);
@@ -1222,20 +1317,16 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         if (orb.targetId === zombie.id) {
                             const distSq = (orb.x - zombie.x)**2 + (orb.y - zombie.y)**2;
                             if (distSq < (ZOMBIE_SIZE / 2)**2) {
-                                zombie.health -= playerStateRef.current.damage;
                                 orbsToRemove.add(orb.id);
-
-                                // Ajout du recul (knockback)
-                                if (zombie.color !== YELLOW_ZOMBIE_COLOR) {
-                                    const dx = zombie.x - orb.x;
-                                    const dy = zombie.y - orb.y;
-                                    const dist = Math.sqrt(distSq);
-                                    if (dist > 0) {
-                                        // Application d'une vélocité au lieu d'un déplacement direct
-                                        zombie.knockbackVx = (zombie.knockbackVx || 0) + (dx / dist) * ORB_KNOCKBACK_STRENGTH;
-                                        zombie.knockbackVy = (zombie.knockbackVy || 0) + (dy / dist) * ORB_KNOCKBACK_STRENGTH;
-                                    }
+                                zombie.health -= playerStateRef.current.damage;
+                                
+                                if (zombie.health <= 0) {
+                                    handleZombieDeath(zombie, now);
                                 }
+
+                                const knockbackAngle = Math.atan2(orb.y - zombie.y, orb.x - zombie.x);
+                                zombie.knockbackVx = Math.cos(knockbackAngle) * ORB_KNOCKBACK_STRENGTH;
+                                zombie.knockbackVy = Math.sin(knockbackAngle) * ORB_KNOCKBACK_STRENGTH;
                             }
                         }
                     });
@@ -1307,6 +1398,16 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                         zombiesRef.current.forEach(zombie => {
                             if (Math.hypot(zombie.x - strikeCenter.x, zombie.y - strikeCenter.y) < LIGHTNING_RADIUS) {
                                 zombie.health -= LIGHTNING_DAMAGE;
+                                if (zombie.health <= 0) {
+                                    handleZombieDeath(zombie, now);
+                                }
+                                const newLightning: Lightning = {
+                                    id: now + Math.random(),
+                                    x: zombie.x + (Math.random() - 0.5) * 40,
+                                    y: strikeCenter.y,
+                                    alpha: 1.0
+                                };
+                                lightningsRef.current.push(newLightning);
                             }
                         });
                     }
@@ -1344,7 +1445,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                             const dist = Math.hypot(blade.x - zombie.x, blade.y - zombie.y);
                             if (dist < ZOMBIE_SIZE / 2 + PIERCING_BLADE_LENGTH / 2) {
                                 zombie.health -= PIERCING_BLADE_DAMAGE;
+                                if (zombie.health <= 0) {
+                                    handleZombieDeath(zombie, now);
+                                }
                                 blade.hitZombieIds.add(zombie.id);
+                                spawnBloodParticles(zombie.x, zombie.y, 5, '#cccccc');
                             }
                         }
                     });
@@ -2269,6 +2374,82 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillText(`Camera: ${Math.round(cameraRef.current.x)}, ${Math.round(cameraRef.current.y)}`, grenade.x + 40, grenade.y + 20);
                 context.restore();
             });
+
+            // Draw bloodstains
+            bloodstainsRef.current.forEach(stain => {
+                context.fillStyle = stain.color;
+                context.beginPath();
+                context.arc(stain.x, stain.y, stain.radius, 0, Math.PI * 2);
+                context.fill();
+            });
+
+            // Draw bubbles
+            bubblesRef.current.forEach(bubble => {
+                context.fillStyle = 'rgba(226, 232, 240, 0.4)';
+                context.beginPath();
+                context.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
+                context.fill();
+            });
+
+            // Draw health potions
+            healthPotionsRef.current.forEach(potion => {
+                context.fillStyle = '#68d391'; // Vert menthe
+                context.beginPath();
+                context.arc(potion.x, potion.y, HEALTH_POTION_SIZE / 2 + Math.sin(now / 100) * 5, 0, 2 * Math.PI);
+                context.strokeStyle = '#dddddd';
+                context.lineWidth = 1;
+                context.stroke();
+            });
+
+            // Draw rage potions
+            ragePotionsRef.current.forEach(potion => {
+                context.fillStyle = '#e53e3e'; // Rouge
+                context.beginPath();
+                context.arc(potion.x, potion.y, RAGE_POTION_SIZE / 2, 0, 2 * Math.PI);
+                context.strokeStyle = 'rgba(252, 129, 129, 0.8)';
+                context.lineWidth = 2;
+                context.stroke();
+            });
+
+            // Draw coins
+            coinsRef.current.forEach(coin => {
+                context.fillStyle = '#d69e2e'; // Jaune doré
+                context.beginPath();
+                context.arc(coin.x, coin.y, COIN_SIZE / 2, 0, Math.PI * 2);
+                context.fill();
+            });
+
+            // Draw player
+            const playerBodyColor = playerHitCooldownEndRef.current < now ? '#c53030' : '#2c5282'; // Thème bureau: Stylo bleu/rouge
+            context.fillStyle = playerBodyColor;
+            context.fillRect(
+                cameraRef.current.x - PLAYER_SIZE / 2,
+                cameraRef.current.y - PLAYER_SIZE / 2,
+                PLAYER_SIZE, PLAYER_SIZE
+            );
+            // "Yeux" du joueur pour indiquer la direction
+            const eyeOffsetX = lastMovementDirectionRef.current.dx * (PLAYER_SIZE / 4);
+            const eyeOffsetY = lastMovementDirectionRef.current.dy * (PLAYER_SIZE / 4);
+            context.fillStyle = 'white';
+            context.beginPath();
+            context.arc(cameraRef.current.x + eyeOffsetX, cameraRef.current.y + eyeOffsetY, PLAYER_SIZE / 8, 0, 2 * Math.PI);
+            context.fill();
+
+            if (isRageActiveRef.current) {
+                const rageProgress = (rageEndTimeRef.current - now) / RAGE_DURATION;
+                const auraRadius = PLAYER_SIZE / 2 + 10 + Math.sin(now / 80) * 4;
+                
+                context.fillStyle = `rgba(255, 0, 0, ${0.1 + Math.max(0, rageProgress) * 0.2})`;
+                context.beginPath();
+                context.arc(cameraRef.current.x, cameraRef.current.y, auraRadius * 1.5, 0, Math.PI * 2);
+                context.fill();
+
+                context.strokeStyle = `rgba(255, 0, 0, ${0.3 + Math.max(0, rageProgress) * 0.4})`;
+                context.lineWidth = 3;
+                context.beginPath();
+                context.arc(cameraRef.current.x, cameraRef.current.y, auraRadius, 0, Math.PI * 2);
+                context.stroke();
+            }
         };
         
         const gameLoop = () => {
