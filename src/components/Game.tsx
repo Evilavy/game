@@ -1041,6 +1041,31 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 cameraRef.current.x += dx * speed * timeScale;
                 cameraRef.current.y += dy * speed * timeScale;
 
+                // Vérifier si le joueur est sorti de la map
+                const playerTileX = Math.floor(cameraRef.current.x / TILE_SIZE);
+                const playerTileY = Math.floor(cameraRef.current.y / TILE_SIZE);
+                
+                if (playerTileX < 0 || playerTileX >= MAP_WIDTH || playerTileY < 0 || playerTileY >= MAP_HEIGHT) {
+                    // Le joueur est sorti de la map
+                    playerStateRef.current.health = 0;
+                    spawnBloodParticles(cameraRef.current.x, cameraRef.current.y, 100, '#ff0000');
+                    
+                    // Effet visuel dramatique
+                    flashEffectRef.current = {
+                        active: true,
+                        startTime: now,
+                        x: cameraRef.current.x,
+                        y: cameraRef.current.y,
+                        duration: 300,
+                        radius: 200
+                    };
+                    
+                    const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
+                    handleGameOver(Math.floor(finalScore));
+                    setIsGameOver(true);
+                    return;
+                }
+
                 // Empêcher le joueur de sortir de la carte
                 const halfSize = PLAYER_SIZE / 2;
                 cameraRef.current.x = Math.max(halfSize, Math.min(cameraRef.current.x, MAP_WIDTH * TILE_SIZE - halfSize));
@@ -1349,6 +1374,30 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                             }
                         }
                     }
+                }
+
+                // Vérifier si le joueur est sorti de la map
+                const playerTileX = Math.floor(cameraRef.current.x / TILE_SIZE);
+                const playerTileY = Math.floor(cameraRef.current.y / TILE_SIZE);
+                
+                if (playerTileX < 0 || playerTileX >= MAP_WIDTH || playerTileY < 0 || playerTileY >= MAP_HEIGHT) {
+                    // Le joueur est sorti de la map
+                    playerStateRef.current.health = 0;
+                    spawnBloodParticles(cameraRef.current.x, cameraRef.current.y, 100, '#ff0000');
+                    
+                    // Effet visuel dramatique
+                    flashEffectRef.current = {
+                        active: true,
+                        startTime: now,
+                        x: cameraRef.current.x,
+                        y: cameraRef.current.y,
+                        duration: 300,
+                        radius: 200
+                    };
+                    
+                    const finalScore = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
+                    handleGameOver(Math.floor(finalScore));
+                    setIsGameOver(true);
                 }
 
                 // Firing logic
