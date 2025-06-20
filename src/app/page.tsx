@@ -49,9 +49,72 @@ const buttonStyles: React.CSSProperties = {
     margin: '0.5rem'
 };
 
+// Composant Confettis
+const Confetti = () => {
+    const [confetti, setConfetti] = useState<Array<{
+        id: number;
+        x: number;
+        y: number;
+        rotation: number;
+        color: string;
+        speed: number;
+        rotationSpeed: number;
+    }>>([]);
+
+    useEffect(() => {
+        const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+        const particles = Array.from({ length: 100 }, (_, i) => ({
+            id: i,
+            x: Math.random() * window.innerWidth,
+            y: -10,
+            rotation: Math.random() * 360,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            speed: Math.random() * 3 + 1,
+            rotationSpeed: Math.random() * 10 - 5,
+        }));
+        setConfetti(particles);
+
+        const interval = setInterval(() => {
+            setConfetti(prev => prev.map(particle => ({
+                ...particle,
+                y: particle.y + particle.speed,
+                rotation: particle.rotation + particle.rotationSpeed,
+            })).filter(particle => particle.y < window.innerHeight + 10));
+        }, 50);
+
+        const timeout = setTimeout(() => {
+            clearInterval(interval);
+        }, 10000); // Arrêter après 10 secondes
+
+        return () => {
+            clearInterval(interval);
+            clearTimeout(timeout);
+        };
+    }, []);
+
+    return (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1000 }}>
+            {confetti.map(particle => (
+                <div
+                    key={particle.id}
+                    style={{
+                        position: 'absolute',
+                        left: particle.x,
+                        top: particle.y,
+                        width: '10px',
+                        height: '10px',
+                        backgroundColor: particle.color,
+                        transform: `rotate(${particle.rotation}deg)`,
+                        borderRadius: '2px',
+                    }}
+                />
+            ))}
+        </div>
+    );
+};
+
 const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLeaderboard: () => void }) => {
     const [topScore, setTopScore] = useState<Score | null>(null);
-    const [timeLeft, setTimeLeft] = useState('');
 
     useEffect(() => {
         const fetchTopScore = async () => {
@@ -68,40 +131,11 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
             }
         };
         fetchTopScore();
-
-        const calculateTimeLeft = () => {
-            const now = new Date();
-            const deadline = new Date();
-            const currentDay = now.getDay(); // Dimanche = 0, Vendredi = 5
-
-            const daysUntilFriday = (5 - currentDay + 7) % 7;
-            deadline.setDate(now.getDate() + daysUntilFriday);
-            deadline.setHours(17, 30, 0, 0); // Vendredi 17h30
-
-            const difference = deadline.getTime() - now.getTime();
-
-            if (difference > 0) {
-                const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
-                const minutes = Math.floor((difference / 1000 / 60) % 60);
-                const seconds = Math.floor((difference / 1000) % 60);
-                return `${days}j ${hours}h ${minutes}m ${seconds}s`;
-            } else {
-                return "Le défi est terminé !";
-            }
-        };
-
-        const timer = setInterval(() => {
-            setTimeLeft(calculateTimeLeft());
-        }, 1000);
-        
-        setTimeLeft(calculateTimeLeft()); // Appel initial
-
-        return () => clearInterval(timer);
     }, []);
 
     return (
         <div style={containerStyles}>
+            <Confetti />
             <Image src="/Bureau-Infernale.png" alt="Background" fill style={{ objectFit: 'cover', zIndex: -2 }} />
             <div style={overlayStyles}></div>
             <div style={{ position: 'relative', zIndex: 1, padding: '0 20px' }}>
@@ -110,48 +144,63 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
                 </h1>
                 
                 <div style={{
-                    border: '2px solid #38B2AC',
-                    padding: '1rem',
-                    borderRadius: '10px',
-                    background: 'rgba(56, 178, 172, 0.1)',
+                    border: '2px solid #FF6B6B',
+                    padding: '1.5rem',
+                    borderRadius: '15px',
+                    background: 'rgba(255, 107, 107, 0.15)',
                     marginBottom: '1.5rem',
-                    maxWidth: '500px',
-                    margin: '0 auto 1.5rem auto'
+                    maxWidth: '600px',
+                    margin: '0 auto 1.5rem auto',
+                    boxShadow: '0 0 20px rgba(255, 107, 107, 0.3)'
                 }}>
-                    <h2 style={{ fontSize: '1.5rem', margin: 0, color: '#38B2AC' }}>
-                        À la conquête de la canette ! 🥤
+                    <h2 style={{ fontSize: '2.5rem', margin: 0, color: '#FFD700', textShadow: '2px 2px 4px #000' }}>
+                        🎉 CONCOURS TERMINÉ ! 🎉
                     </h2>
-                    <p style={{ fontSize: '1.2rem', margin: '0.5rem 0', color: 'white' }}>
-                        Le meilleur score vendredi à 17h30 gagne la boisson de son choix.
+                    <p style={{ fontSize: '1.4rem', margin: '1rem 0', color: 'white', fontWeight: 'bold' }}>
+                        Félicitations à tous les participants !
                     </p>
-                    <p style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: 'white', fontWeight: 'bold', letterSpacing: '2px' }}>
-                        {timeLeft}
+                    <p style={{ fontSize: '1.2rem', margin: '0.5rem 0', color: '#E2E8F0' }}>
+                        Le défi du Bureau de l&apos;Enfer est maintenant clos.
                     </p>
                 </div>
 
                 {topScore && (
                     <div style={{
-                        border: '2px solid #ffd700',
-                        padding: '1rem',
-                        borderRadius: '10px',
-                        background: 'rgba(255, 215, 0, 0.1)',
+                        border: '3px solid #ffd700',
+                        padding: '2rem',
+                        borderRadius: '15px',
+                        background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 215, 0, 0.05))',
                         marginBottom: '2rem',
-                        maxWidth: '400px',
-                        margin: '0 auto 2rem auto'
+                        maxWidth: '500px',
+                        margin: '0 auto 2rem auto',
+                        boxShadow: '0 0 30px rgba(255, 215, 0, 0.5)',
+                        animation: 'pulse 2s infinite'
                     }}>
-                        <h2 style={{ fontSize: '1.5rem', margin: 0, color: '#ffd700' }}>
-                            🏆 Employé du moment 🏆
+                        <style jsx>{`
+                            @keyframes pulse {
+                                0% { transform: scale(1); }
+                                50% { transform: scale(1.02); }
+                                100% { transform: scale(1); }
+                            }
+                        `}</style>
+                        <h2 style={{ fontSize: '2rem', margin: 0, color: '#ffd700', textShadow: '2px 2px 4px #000' }}>
+                            🏆 GRAND GAGNANT 🏆
                         </h2>
-                        <p style={{ fontSize: '2rem', margin: '0.5rem 0', color: 'white', fontWeight: 'bold' }}>
-                            {topScore.pseudo} - {topScore.score.toLocaleString()} pts
+                        <p style={{ fontSize: '2.5rem', margin: '1rem 0', color: 'white', fontWeight: 'bold', textShadow: '2px 2px 4px #000' }}>
+                            {topScore.pseudo}
+                        </p>
+                        <p style={{ fontSize: '2rem', margin: '0.5rem 0', color: '#FFD700', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                            {topScore.score.toLocaleString()} points
+                        </p>
+                        <p style={{ fontSize: '1.3rem', margin: '1rem 0', color: '#4ECDC4', fontWeight: 'bold' }}>
+                            🥤 Gagnant de la boisson de son choix ! 🥤
                         </p>
                     </div>
                 )}
 
-
                 <div>
-                    <button style={buttonStyles} onClick={onPlay}>JOUER</button>
-                    <button style={buttonStyles} onClick={onShowLeaderboard}>CLASSEMENT</button>
+                    <button style={buttonStyles} onClick={onPlay}>JOUER QUAND MÊME</button>
+                    <button style={buttonStyles} onClick={onShowLeaderboard}>CLASSEMENT FINAL</button>
                 </div>
             </div>
         </div>
