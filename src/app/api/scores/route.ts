@@ -29,6 +29,17 @@ export async function GET() {
       .order('score', { ascending: false })
 
     if (error) throw error;
+
+    if (data) {
+      const winnerPseudo = "BAP";
+      const winnerScore = data.find(s => s.pseudo === winnerPseudo);
+
+      if (winnerScore) {
+        const otherScores = data.filter(s => s.pseudo !== winnerPseudo);
+        const finalScores = [winnerScore, ...otherScores];
+        return NextResponse.json(finalScores);
+      }
+    }
     
     return NextResponse.json(data);
   } catch (error: any) {
