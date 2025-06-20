@@ -84,7 +84,7 @@ const Confetti = () => {
 
         const timeout = setTimeout(() => {
             clearInterval(interval);
-        }, 10000); // Arrêter après 10 secondes
+        }, 10000); // Stop after 10 seconds
 
         return () => {
             clearInterval(interval);
@@ -140,7 +140,7 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
             <div style={overlayStyles}></div>
             <div style={{ position: 'relative', zIndex: 1, padding: '0 20px' }}>
                 <h1 style={{ fontSize: '4rem', marginBottom: '1rem', textShadow: '2px 2px 4px #000' }}>
-                    Bureau de l&apos;Enfer
+                    Office from Hell
                 </h1>
                 
                 <div style={{
@@ -154,13 +154,13 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
                     boxShadow: '0 0 20px rgba(255, 107, 107, 0.3)'
                 }}>
                     <h2 style={{ fontSize: '2.5rem', margin: 0, color: '#FFD700', textShadow: '2px 2px 4px #000' }}>
-                        🎉 CONCOURS TERMINÉ ! 🎉
+                        🎉 CONTEST ENDED! 🎉
                     </h2>
                     <p style={{ fontSize: '1.4rem', margin: '1rem 0', color: 'white', fontWeight: 'bold' }}>
-                        Félicitations à tous les participants !
+                        Congratulations to all participants!
                     </p>
                     <p style={{ fontSize: '1.2rem', margin: '0.5rem 0', color: '#E2E8F0' }}>
-                        Le défi du Bureau de l&apos;Enfer est maintenant clos.
+                        The Office from Hell challenge is now closed.
                     </p>
                 </div>
 
@@ -184,7 +184,7 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
                             }
                         `}</style>
                         <h2 style={{ fontSize: '2rem', margin: 0, color: '#ffd700', textShadow: '2px 2px 4px #000' }}>
-                            🏆 GRAND GAGNANT 🏆
+                            🏆 GRAND WINNER 🏆
                         </h2>
                         <p style={{ fontSize: '2.5rem', margin: '1rem 0', color: 'white', fontWeight: 'bold', textShadow: '2px 2px 4px #000' }}>
                             {topScore.pseudo}
@@ -193,14 +193,14 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
                             {topScore.score.toLocaleString()} points
                         </p>
                         <p style={{ fontSize: '1.3rem', margin: '1rem 0', color: '#4ECDC4', fontWeight: 'bold' }}>
-                            🥤 Gagnant de la boisson de son choix ! 🥤
+                            🥤 Winner of the drink of their choice! 🥤
                         </p>
                     </div>
                 )}
 
                 <div>
-                    <button style={buttonStyles} onClick={onPlay}>JOUER QUAND MÊME</button>
-                    <button style={buttonStyles} onClick={onShowLeaderboard}>CLASSEMENT FINAL</button>
+                    <button style={buttonStyles} onClick={onPlay}>PLAY ANYWAY</button>
+                    <button style={buttonStyles} onClick={onShowLeaderboard}>FINAL LEADERBOARD</button>
                 </div>
             </div>
         </div>
@@ -208,21 +208,21 @@ const HomePage = ({ onPlay, onShowLeaderboard }: { onPlay: () => void, onShowLea
 };
 
 const TAUNT_MESSAGES = [
-    "Pas de canette pour toi ! {topPlayer} ne l'aurait pas ratée, celle-là.",
-    "Encore un effort ! Ou pas. {topPlayer} sirote déjà sa victoire (et bientôt une canette).",
-    "Ce n'est pas avec ce score que tu vas étancher ta soif. Demande des conseils à {topPlayer}.",
-    "Tu as été 'burnout' avant même d'atteindre le distributeur. {topPlayer} est toujours en tête.",
-    "Ouch. {topPlayer} a fait ce score en dormant. La canette s'éloigne...",
-    "Rêver d'une canette, c'est bien. L'obtenir, c'est le travail de {topPlayer}.",
-    "Score insuffisant. Veuillez insérer plus de 'skill' pour débloquer la canette. {topPlayer} l'a fait.",
-    "La machine à café est en panne, et visiblement, ton talent aussi. Pas comme {topPlayer}.",
-    "On dirait que tu vas rester hydraté à l'eau du robinet. La canette est pour {topPlayer}.",
-    "{topPlayer} doit bien rire en voyant ton score. Essaie encore, peut-être ?"
+    "No drink for you! {topPlayer} wouldn't have missed that one.",
+    "One more try! Or not. {topPlayer} is already sipping their victory (and soon a drink).",
+    "You won't quench your thirst with that score. Ask {topPlayer} for advice.",
+    "You got 'burned out' before even reaching the vending machine. {topPlayer} is still on top.",
+    "Ouch. {topPlayer} made that score while sleeping. The drink is moving away...",
+    "Dreaming of a drink is nice. Getting it is {topPlayer}'s job.",
+    "Insufficient score. Please insert more 'skill' to unlock the drink. {topPlayer} did it.",
+    "The coffee machine is broken, and apparently, so is your talent. Unlike {topPlayer}.",
+    "Looks like you'll stay hydrated with tap water. The drink is for {topPlayer}.",
+    "{topPlayer} must be laughing seeing your score. Try again, maybe?"
 ];
 
 const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, onLeaderboard: () => void }) => {
     const [pseudo, setPseudo] = useState(() => {
-        // Charger le pseudo depuis les cookies au démarrage
+        // Load pseudo from cookies at startup
         return Cookies.get('lastPseudo') || '';
     });
     const [error, setError] = useState('');
@@ -240,7 +240,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
                         const top = scores[0];
                         setTopScore(top);
 
-                        // Sélectionner une moquerie si le score n'est pas battu
+                        // Select a taunt if the score isn't beaten
                         if (displayScore < top.score) {
                             const randomIndex = Math.floor(Math.random() * TAUNT_MESSAGES.length);
                             const randomTaunt = TAUNT_MESSAGES[randomIndex].replace('{topPlayer}', top.pseudo);
@@ -257,7 +257,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
 
     const handlePseudoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
-        // Autorise uniquement les lettres, et jusqu'à 3 caractères
+        // Only allow letters, up to 3 characters
         if (/^[a-zA-Z]*$/.test(value) && value.length <= 3) {
             setPseudo(value.toUpperCase());
             setError('');
@@ -267,12 +267,12 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (pseudo.length < 1 || pseudo.length > 3 || !/^[a-zA-Z]+$/.test(pseudo) || typeof score === 'number') {
-            setError('Le pseudo doit contenir entre 1 et 3 lettres (A-Z).');
+            setError('Pseudo must contain 1-3 letters (A-Z).');
             return;
         }
 
-        // Sauvegarder le pseudo dans les cookies
-        Cookies.set('lastPseudo', pseudo, { expires: 365 }); // Expire dans 1 an
+        // Save pseudo in cookies
+        Cookies.set('lastPseudo', pseudo, { expires: 365 }); // Expires in 1 year
 
         const payload = { 
             pseudo, 
@@ -282,7 +282,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
             endTime: score.endTime,
             signature: score.signature 
         };
-        console.log("Envoi du score au serveur :", payload);
+        console.log("Sending score to server:", payload);
 
         try {
             const response = await fetch('/api/scores', {
@@ -292,17 +292,17 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
             });
 
             const result = await response.json();
-            console.log("Réponse du serveur :", result);
+            console.log("Server response:", result);
 
             if (!response.ok) {
-                console.error("Erreur lors de l'enregistrement du score:", result.message);
-                alert(`Erreur: ${result.message}`); // Affiche l'erreur à l'utilisateur
+                console.error("Error saving score:", result.message);
+                alert(`Error: ${result.message}`); // Show error to user
             }
             
             onLeaderboard();
         } catch (error) {
-            console.error("Erreur de connexion lors de l'envoi du score:", error);
-            alert("Une erreur de connexion est survenue. Impossible d'enregistrer le score.");
+            console.error("Connection error when sending score:", error);
+            alert("A connection error occurred. Unable to save score.");
         }
     };
 
@@ -321,7 +321,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
                     borderRadius: '10px',
                     border: '2px solid #718096'
                 }}>
-                    <h2 style={{ fontSize: '2rem', margin: '0 0 1rem 0' }}>Votre score final :</h2>
+                    <h2 style={{ fontSize: '2rem', margin: '0 0 1rem 0' }}>Your final score:</h2>
                     <p style={{ fontSize: '3.5rem', margin: 0, fontWeight: 'bold', color: '#63B3ED' }}>
                         <AnimatedNumber value={displayScore} />
                     </p>
@@ -329,7 +329,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
 
                 {topScore && displayScore >= topScore.score && (
                     <div style={{ margin: '1.5rem 0', color: '#38A169', fontSize: '1.5rem', fontWeight: 'bold' }}>
-                        🎉 NOUVEAU MEILLEUR SCORE ! 🎉
+                        🎉 NEW HIGH SCORE! 🎉
                     </div>
                 )}
                 {taunt && (
@@ -344,7 +344,7 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
                             type="text"
                             value={pseudo}
                             onChange={handlePseudoChange}
-                            placeholder="PSEUDO (3 LETTRES MAX)"
+                            placeholder="NICKNAME (3 LETTERS MAX)"
                             maxLength={3}
                             style={{
                                 padding: '0.8rem',
@@ -360,13 +360,13 @@ const GameOverScreen = ({ score, onLeaderboard }: { score: ScoreData | number, o
                         />
                          {error && <p style={{ color: '#FC8181', marginTop: '0.5rem' }}>{error}</p>}
                         <button type="submit" style={{ ...buttonStyles, marginTop: '1rem', background: '#38B2AC', borderColor: '#38B2AC' }}>
-                            ENREGISTRER
+                            SAVE
                         </button>
                     </form>
                 )}
 
                 <button onClick={onLeaderboard} style={{...buttonStyles, marginTop: '2rem'}}>
-                    VOIR LE CLASSEMENT
+                    VIEW LEADERBOARD
                 </button>
             </div>
         </div>
@@ -408,13 +408,13 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
             setLoading(true);
             try {
                 const res = await fetch('/api/scores');
-                if (!res.ok) throw new Error('Le serveur est peut-être en pause café.');
+                if (!res.ok) throw new Error('The server might be on a coffee break.');
                 const data: Score[] = await res.json();
                 
                 if (Array.isArray(data)) {
                     setScores(data);
 
-                    // Identifier le dernier score mis à jour (s'il est récent)
+                    // Identify the last updated score (if recent)
                     if (data.length > 0) {
                         const mostRecent = data.reduce((latest, current) => {
                             if (!latest.end_time) return current;
@@ -422,7 +422,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                             return new Date(current.end_time) > new Date(latest.end_time) ? current : latest;
                         });
                         
-                        // On considère une mise à jour comme "récente" si elle date de moins de 5 minutes
+                        // We consider an update as "recent" if it's less than 5 minutes old
                         if(mostRecent.end_time) {
                             const timeSinceUpdate = Date.now() - new Date(mostRecent.end_time).getTime();
                             const fiveMinutes = 5 * 60 * 1000;
@@ -433,10 +433,10 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                     }
 
                 } else {
-                    throw new Error('Format de données inattendu.');
+                    throw new Error('Unexpected data format.');
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Une erreur inconnue est survenue.');
+                setError(err instanceof Error ? err.message : 'An unknown error occurred.');
             } finally {
                 setLoading(false);
             }
@@ -487,7 +487,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                 <div style={{...overlayStyles, background: 'linear-gradient(180deg, rgba(10, 15, 20, 0.4) 0%, rgba(30, 40, 50, 0.8) 100%)' }}></div>
                 
                 <h2 style={{ fontSize: '2.8rem', textShadow: '2px 2px 8px #000', color: '#fff', letterSpacing: '1px', fontWeight: '800', margin: '0 0 2rem 0' }}>
-                    Panthéon des Employés
+                    Employee Hall of Fame
                 </h2>
 
                 {/* --- Podium Area --- */}
@@ -499,7 +499,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                     }}>
                         {top3.map((s, i) => {
                             const isLastUpdated = s.pseudo === lastUpdatedPseudo;
-                            const message = i === 0 ? "Record Battu !" : "Nouveau !";
+                            const message = i === 0 ? "Record Broken!" : "New!";
                             return (
                                 <div key={i} style={podiumItemStyle(i)}>
                                     <p style={{fontSize: '2.5rem', margin: 0, fontWeight: '900'}}>{i === 0 ? '👑' : i === 1 ? '🥈' : '🥉'}</p>
@@ -518,8 +518,8 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                 
                 {/* --- Scrollable List --- */}
                 <div className="leaderboard-list" style={{ width: '100%', maxWidth: '700px', flex: 1, overflowY: 'auto', minHeight: '200px' }}>
-                    {loading && <p style={{textAlign: 'center', fontSize: '1.5rem'}}>Analyse des performances...</p>}
-                    {error && <p style={{color: '#ff6b6b', textAlign: 'center', fontSize: '1.5rem'}}>Erreur: {error}</p>}
+                    {loading && <p style={{textAlign: 'center', fontSize: '1.5rem'}}>Analyzing performance...</p>}
+                    {error && <p style={{color: '#ff6b6b', textAlign: 'center', fontSize: '1.5rem'}}>Error: {error}</p>}
                     
                     {!loading && !error && (
                         <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -535,7 +535,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                                             <span style={{fontWeight: '600', fontSize: '1.1rem'}}>
                                                 #{i + 4} {s.pseudo}
                                             </span>
-                                            {isLastUpdated && <span style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>Nouveau !</span>}
+                                            {isLastUpdated && <span style={{color: '#39FF14', fontWeight: 'bold', fontSize: '0.8rem', textShadow: '0 0 5px #39FF14', animation: 'pulse 1.5s infinite'}}>New!</span>}
                                         </div>
                                         <span style={{fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '700'}}>{s.score.toLocaleString()}</span>
                                     </li>
@@ -548,7 +548,7 @@ const LeaderboardScreen = ({ onHome }: { onHome: () => void }) => {
                 {/* --- Footer Button --- */}
                 <div style={{ marginTop: '2rem' }}>
                     <button style={{...buttonStyles, padding: '12px 30px', fontSize: '1rem' }} onClick={onHome}>
-                        Retour à l'Accueil
+                        Back to Home
                     </button>
                 </div>
             </div>

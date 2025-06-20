@@ -5,8 +5,8 @@ import { createNoise2D } from 'simplex-noise';
 import { Joystick } from 'react-joystick-component';
 
 // --- CONSTANTES DE SÉCURITÉ ---
-const MIN_GAME_DURATION = 15000; // 15 secondes minimum
-const MAX_GAME_DURATION = 3600000; // 1 heure maximum
+const MIN_GAME_DURATION = 15000; // 15 seconds minimum
+const MAX_GAME_DURATION = 3600000; // 1 hour maximum
 const ANTI_CHEAT_SECRET_KEY = process.env.NEXT_PUBLIC_ANTI_CHEAT_SECRET_KEY;
 
 // --- CONSTANTES DE JEU ---
@@ -276,11 +276,11 @@ interface GameProps {
 }
 
 const ALL_PERKS: Perk[] = [
-    { id: 'FIRE_RATE', name: 'Boost de Caféine', description: 'Lancez des boules de papier 25% plus vite.' },
-    { id: 'DAMAGE', name: 'Boules de papier Incandescentes', description: 'Vos boules de papier infligent le double de dégâts.' },
-    { id: 'POISON', name: 'Café Renversé', description: 'Crée une flaque de café qui blesse et ralentit les ennemis.' },
-    { id: 'LIGHTNING', name: 'Court-Circuit', description: "Toutes les 5s, un court-circuit frappe un groupe d'ennemis." },
-    { id: 'PIERCING_BLADE', name: 'Ramette Tranchante', description: 'Toutes les 3s, lance une ramette de papier qui transperce les ennemis.' },
+    { id: 'FIRE_RATE', name: 'Caffeine Boost', description: 'Throw paper balls 25% faster.' },
+    { id: 'DAMAGE', name: 'Blazing Paper Balls', description: 'Your paper balls deal double damage.' },
+    { id: 'POISON', name: 'Spilled Coffee', description: 'Creates a coffee puddle that hurts and slows enemies.' },
+    { id: 'LIGHTNING', name: 'Short Circuit', description: "Every 5s, a short circuit strikes a group of enemies." },
+    { id: 'PIERCING_BLADE', name: 'Sharp Ream', description: 'Every 3s, launches a paper ream that pierces through enemies.' },
 ];
 
 // --- RAGE MODE ---
@@ -330,7 +330,7 @@ const generateBloodPattern = (x: number, y: number, isRage: boolean) => {
             y,
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
-            // Réduction de la durée de vie en mode rage
+                            // Reduced lifetime in rage mode
             life: Math.random() * 30 + (isRage ? 30 : 30),
             color: isRage ? 
                 `rgba(${180 + Math.random() * 75}, ${Math.random() * 20}, ${Math.random() * 20}, ${0.6 + Math.random() * 0.2})` :
@@ -480,18 +480,18 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
     const handleGameOver = useCallback(async (finalScore: number) => {
         if (!gameStartTimeRef.current) return;
         const gameDuration = Date.now() - gameStartTimeRef.current;
-        console.log("Durée de la partie:", gameDuration, "ms");
+        console.log("Game duration:", gameDuration, "ms");
         
-        // Vérification de la durée minimum
+        // Minimum duration verification
         if (gameDuration < MIN_GAME_DURATION) {
-            console.error(`Durée de partie trop courte (${gameDuration}ms < ${MIN_GAME_DURATION}ms)`);
-            alert("La partie est trop courte pour être enregistrée (minimum 15 secondes).");
+            console.error(`Game duration too short (${gameDuration}ms < ${MIN_GAME_DURATION}ms)`);
+            alert("The game is too short to be recorded (minimum 15 seconds).");
             onGameOver(0);
             return;
         }
         
         if (!gameStartTimeRef.current) {
-            console.error("Heure de début de partie non définie !");
+            console.error("Game start time not defined!");
             onGameOver(0);
             return;
         }
@@ -502,12 +502,12 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
         const endTime = Date.now();
 
         if (!ANTI_CHEAT_SECRET_KEY) {
-            console.error("Clé secrète anti-triche non définie côté client !");
+            console.error("Anti-cheat secret key not defined on client side!");
             onGameOver(0);
             return;
         }
 
-        // Création de la signature anti-triche
+        // Creating anti-cheat signature
         const dataString = `${score}|${sessionToken}|${startTime}|${endTime}`;
         
         const encoder = new TextEncoder();
@@ -613,7 +613,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     }
                 }
             } catch (error) {
-                console.error("Erreur lors du chargement du classement:", error);
+                console.error("Error loading leaderboard:", error);
             }
         };
         fetchLeaderboard();
@@ -763,7 +763,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
     const triggerDash = () => {
         const now = Date.now();
-        if (isLevelingUp) return; // Ne pas permettre le dash pendant la sélection de perk
+                    if (isLevelingUp) return; // Don't allow dash during perk selection
         if (now > dashCooldownEndRef.current) {
             const preDashX = cameraRef.current.x;
             const preDashY = cameraRef.current.y;
@@ -829,7 +829,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
 
     const throwGrenade = () => {
         const now = Date.now();
-        if (isLevelingUp) return; // Ne pas permettre le lancer de grenade pendant la sélection de perk
+                    if (isLevelingUp) return; // Don't allow grenade throwing during perk selection
         if (now > lastGrenadeTimeRef.current + GRENADE_COOLDOWN) {
             lastGrenadeTimeRef.current = now;
             const direction = lastMovementDirectionRef.current;
@@ -1428,7 +1428,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 // Orb movement & collision
                 const orbsToRemove = new Set<number>();
                 zombiesRef.current.forEach(zombie => {
-                    // Despawn des zombies jaunes par durée de vie
+                    // Despawn yellow zombies by lifetime
                     if (zombie.color === YELLOW_ZOMBIE_COLOR && zombie.spawnTime) {
                         if (now > zombie.spawnTime + YELLOW_ZOMBIE_LIFETIME) {
                             return false; // Supprime le zombie
@@ -1748,8 +1748,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     if (playerRankRef.current === null) {
                         playerRankRef.current = rank;
                     } else if (rank < playerRankRef.current) {
-                        // Le joueur est monté dans le classement !
-                        const rankUpMessages = ["Bien joué !", "Superbe !", "Continuez !", "Excellent !", "Incroyable !"];
+                        // Player has climbed the rankings!
+                        const rankUpMessages = ["Well done!", "Superb!", "Keep going!", "Excellent!", "Incredible!"];
                         const message = rankUpMessages[Math.floor(Math.random() * rankUpMessages.length)];
                         setRankUpAnimation({ show: true, rank, text: message });
                         setTimeout(() => setRankUpAnimation({ show: false, rank: 0, text: '' }), 3000); // Animation de 3s
@@ -1813,7 +1813,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
             // Gestion de la disparition des taches de sang
             bloodstainsRef.current = bloodstainsRef.current.filter(stain => {
                 const timeSinceFadeStart = now - stain.fadeStartTime;
-                return timeSinceFadeStart < 2000; // Supprime après 2 secondes de fade
+                return timeSinceFadeStart < 2000; // Remove after 2 seconds of fade
             });
         };
         
@@ -2280,20 +2280,20 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.strokeRect(x+2, y+2, width-4, height-4);
             };
 
-            // --- CADRE GAUCHE (Niveau, XP, Vies) ---
+            // --- LEFT FRAME (Level, XP, Lives) ---
             const frameX = 15;
             const frameY = 15;
             const frameWidth = 220;
             const frameHeight = 130;
             drawPixelatedFrame(frameX, frameY, frameWidth, frameHeight);
 
-            // Niveau
+            // Level
             context.fillStyle = 'white';
             context.font = 'bold 20px "Courier New", Courier, monospace';
             context.shadowColor = 'black';
             context.shadowBlur = 4;
             context.textAlign = 'left';
-            context.fillText(`NIVEAU ${playerStateRef.current.level}`, frameX + 15, frameY + 30);
+            context.fillText(`LEVEL ${playerStateRef.current.level}`, frameX + 15, frameY + 30);
             
             // Score
             const currentTotalXp = Math.floor(totalXpForLevel(playerStateRef.current.level) + xpRef.current);
@@ -2328,22 +2328,22 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillRect(heartX + heartSize*0.25, heartsY + heartSize*0.75, heartSize*0.5, heartSize*0.25);
             }
 
-            // --- CADRE DROIT (Classement) ---
+            // --- RIGHT FRAME (Ranking) ---
             const rightFrameWidth = isMobile ? frameWidth : 240;
             const rightFrameX = isMobile ? frameX : canvas.width - rightFrameWidth - 15;
             const rightFrameY = isMobile ? frameY + frameHeight + 15 : frameY;
             drawPixelatedFrame(rightFrameX, rightFrameY, rightFrameWidth, frameHeight - 20);
             
-            // Rang
+            // Rank
             context.textAlign = isMobile ? 'left' : 'right';
             if (playerRankRef.current !== null) {
                 context.fillStyle = 'white';
                 context.font = 'bold 22px "Courier New", Courier, monospace';
                 const rankTextX = isMobile ? rightFrameX + 15 : canvas.width - 25;
-                context.fillText(`RANG #${playerRankRef.current}`, rankTextX, rightFrameY + 35);
+                context.fillText(`RANK #${playerRankRef.current}`, rankTextX, rightFrameY + 35);
             }
 
-            // Barre de progression vers le #1
+            // Progress bar towards #1
             if (leaderboard.length > 0) {
                 const topScore = leaderboard[0].score;
                 const currentTotalXp = totalXpForLevel(playerStateRef.current.level) + xpRef.current;
@@ -2367,10 +2367,10 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.fillStyle = 'white';
                 context.textAlign = 'right';
                 const progressTextX = isMobile ? rightFrameX + 15 + progressWidth : canvas.width - 25;
-                context.fillText(`${Math.floor(progressPercentage*100)}% vers #1`, progressTextX, progressY - 5);
+                context.fillText(`${Math.floor(progressPercentage*100)}% to #1`, progressTextX, progressY - 5);
             }
             
-            // --- CADRE BAS (Compétences) ---
+            // --- BOTTOM FRAME (Skills) ---
             if (!isMobile) {
                 const skillsFrameX = frameX;
                 const skillsFrameY = canvas.height - 75;
@@ -2378,14 +2378,14 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 const skillsFrameHeight = 60;
                 drawPixelatedFrame(skillsFrameX, skillsFrameY, skillsFrameWidth, skillsFrameHeight);
 
-                // Compétence de Dash
+                // Dash Skill
                 context.font = 'bold 16px "Courier New", Courier, monospace';
                 context.fillStyle = 'white';
-                context.fillText('💨 PET TOXIQUE', skillsFrameX + 15, skillsFrameY + 25);
+                context.fillText('💨 TOXIC FART', skillsFrameX + 15, skillsFrameY + 25);
                 context.font = '12px "Courier New", Courier, monospace';
                 context.fillStyle = '#ccc';
                 context.textAlign = 'right';
-                context.fillText('[ESPACE]', skillsFrameX + skillsFrameWidth - 15, skillsFrameY + 25);
+                context.fillText('[SPACE]', skillsFrameX + skillsFrameWidth - 15, skillsFrameY + 25);
                 context.textAlign = 'left';
 
                 const cooldownBarY = skillsFrameY + 40;
@@ -2403,11 +2403,11 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                 context.strokeStyle = '#666';
                 context.strokeRect(skillsFrameX + 15, cooldownBarY, cooldownBarWidth, 10);
 
-                // Cadre pour la Grenade
+                // Grenade Frame
                 const grenadeFrameX = skillsFrameX + skillsFrameWidth + 15;
                 drawPixelatedFrame(grenadeFrameX, skillsFrameY, skillsFrameWidth, skillsFrameHeight);
 
-                // Compétence de Grenade
+                // Grenade Skill
                 context.font = 'bold 16px "Courier New", Courier, monospace';
                 context.fillStyle = 'white';
                 context.fillText('💣 GRENADE [G]', grenadeFrameX + 15, skillsFrameY + 25);
@@ -2859,7 +2859,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     animation: 'rankUp-toast-animation 3s ease-out forwards',
                 }}>
                     <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>
-                        {rankUpAnimation.text} Vous montez au rang <span style={{color: '#39FF14'}}>#{rankUpAnimation.rank}</span> !
+                        {rankUpAnimation.text} You climb to rank <span style={{color: '#39FF14'}}>#{rankUpAnimation.rank}</span>!
                     </p>
                 </div>
             )}
@@ -2870,8 +2870,8 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                     background: 'rgba(0,0,0,0.8)', color: 'white', padding: '40px',
                     border: '2px solid white', borderRadius: '10px', textAlign: 'center'
                 }}>
-                    <h2>NIVEAU SUPÉRIEUR !</h2>
-                    <p>Choisissez une amélioration :</p>
+                    <h2>LEVEL UP!</h2>
+                    <p>Choose an upgrade:</p>
                     <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
                         {availablePerks.length > 0 ? availablePerks.map(perk => (
                             <button key={perk.id} onClick={() => selectPerk(perk)} style={{
@@ -2882,7 +2882,7 @@ const Game: React.FC<GameProps> = ({ onGameOver }) => {
                                 <strong>{perk.name}</strong>
                                 <p style={{ fontSize: '12px', marginTop: '5px' }}>{perk.description}</p>
                             </button>
-                        )) : <p>Toutes les améliorations ont été acquises !</p>}
+                        )) : <p>All upgrades have been acquired!</p>}
                     </div>
                 </div>
             )}
